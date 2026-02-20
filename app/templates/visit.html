@@ -84,7 +84,26 @@
             <td><input name="notes" class="form-control form-control-sm" value="{{ ln.notes or '' }}"></td>
             <td style="width:90px;"><input name="parts_cost" class="form-control form-control-sm text-end" value="{{ '%.2f'|format(ln.parts_cost or 0) }}"></td>
             <td style="width:90px;"><input name="labor_cost" class="form-control form-control-sm text-end" value="{{ '%.2f'|format(ln.labor_cost or 0) }}"></td>
-            <td class="text-end" style="width:90px;"><button class="btn btn-sm btn-outline-primary">Save</button></td>
+            <td class="text-end" style="width:140px;">    <button class="btn btn-sm btn-outline-primary">Save</button>
+
+    <form method="post"
+          action="/visits/{{ visit.id }}/lines/{{ ln.id }}/delete"
+          style="display:inline;">
+        <button class="btn btn-sm btn-outline-danger"
+                onclick="return confirm('Να διαγραφεί η γραμμή;')">
+            Delete
+        </button>
+    </form>
+</td>
+    <form method="post"
+          action="/visits/{{ visit.id }}/lines/{{ ln.id }}/delete"
+          style="display:inline;">
+        <button class="btn btn-sm btn-outline-danger"
+                onclick="return confirm('Να διαγραφεί η γραμμή;')">
+            Delete
+        </button>
+    </form>
+</td>
           </form>
         </tr>
         {% endfor %}
