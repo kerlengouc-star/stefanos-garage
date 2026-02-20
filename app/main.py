@@ -502,3 +502,17 @@ def delete_line(visit_id: int, line_id: int, request: Request, db: Session = Dep
         recalc_totals(db, visit)
 
     return RedirectResponse(f"/visits/{visit_id}", status_code=302)
+    ln = db.query(VisitChecklistLine).filter(
+        VisitChecklistLine.id == line_id,
+        VisitChecklistLine.visit_id == visit_id
+    ).first()
+
+    if ln:
+        db.delete(ln)
+        db.commit()
+
+    visit = db.query(Visit).filter(Visit.id == visit_id).first()
+    if visit:
+        recalc_totals(db, visit)
+
+    return RedirectResponse(f"/visits/{visit_id}", status_code=302)
