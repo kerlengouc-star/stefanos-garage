@@ -7,3 +7,4 @@ python-multipart
 passlib[bcrypt]
 reportlab
 python-dotenv
+itsdangerous
