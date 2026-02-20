@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between">
+  <div>
+    <h3 class="mb-1">{{ visit.job_no }}</h3>
+    <div class="text-muted small">Ημ/νία: {{ visit.date_in.strftime("%Y-%m-%d %H:%M") if visit.date_in else "" }}</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
+    <a class="btn btn-outline-primary" href="/visits/{{ visit.id }}/email">Email</a>
+  </div>
+</div>
+
+<hr>
+
+<form method="post" action="/visits/{{ visit.id }}/update" class="card card-body mb-3">
+  <div class="row g-2">
+    <div class="col-md-3"><label class="form-label">Αρ. Εγγραφής</label><input class="form-control" name="plate_number" value="{{ visit.plate_number or '' }}"></div>
+    <div class="col-md-3"><label class="form-label">VIN</label><input class="form-control" name="vin" value="{{ visit.vin or '' }}"></div>
+    <div class="col-md-6"><label class="form-label">Μοντέλο</label><input class="form-control" name="model" value="{{ visit.model or '' }}"></div>
+
+    <div class="col-md-4"><label class="form-label">Όνομα</label><input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}"></div>
+    <div class="col-md-4"><label class="form-label">Τηλέφωνο</label><input class="form-control" name="phone" value="{{ visit.phone or '' }}"></div>
+    <div class="col-md-4"><label class="form-label">Email</label><input class="form-control" name="email" value="{{ visit.email or '' }}"></div>
+
+    <div class="col-md-2"><label class="form-label">KM</label><input class="form-control" name="km" value="{{ visit.km or '' }}"></div>
+    <div class="col-md-10"><label class="form-label">Παράπονο/Αίτημα</label><input class="form-control" name="customer_complaint" value="{{ visit.customer_complaint or '' }}"></div>
+
+    <div class="col-12 d-flex justify-content-end mt-2">
+      <button class="btn btn-primary">Αποθήκευση</button>
+    </div>
+  </div>
+</form>
+
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h5 class="mb-0">Checklist</h5>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-sm table-striped mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Κατηγορία</th>
+          <th>Σημείο</th>
+          <th>Αποτέλεσμα</th>
+          <th>Σημείωση</th>
+          <th class="text-end">Parts</th>
+          <th class="text-end">Labor</th>
+          <th class="text-end">Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ln in lines %}
+        <tr>
+          <form method="post" action="/visits/{{ visit.id }}/lines/{{ ln.id }}/update">
+            <td style="min-width:140px;">{{ ln.category }}</td>
+            <td style="min-width:220px;">{{ ln.item_name }}</td>
+            <td style="min-width:170px;">
+              <select name="result" class="form-select form-select-sm">
+                {% for opt in ["OK","Θέλει έλεγχο","Αλλαγή"] %}
+                  <option value="{{ opt }}" {% if ln.result==opt %}selected{% endif %}>{{ opt }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input name="notes" class="form-control form-control-sm" value="{{ ln.notes or '' }}"></td>
+            <td class="text-end" style="width:90px;"><input name="parts_cost" class="form-control form-control-sm text-end" value="{{ '%.2f'|format(ln.parts_cost or 0) }}"></td>
+            <td class="text-end" style="width:90px;"><input name="labor_cost" class="form-control form-control-sm text-end" value="{{ '%.2f'|format(ln.labor_cost or 0) }}"></td>
+            <td class="text-end" style="width:90px;">{{ "%.2f"|format(ln.line_total or 0) }}</td>
+            <td class="text-end" style="width:90px;"><button class="btn btn-sm btn-outline-primary">Save</button></td>
+          </form>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4" class="text-end"><b>Σύνολα</b></td>
+          <td class="text-end"><b>{{ "%.2f"|format(visit.total_parts or 0) }}</b></td>
+          <td class="text-end"><b>{{ "%.2f"|format(visit.total_labor or 0) }}</b></td>
+          <td class="text-end"><b>{{ "%.2f"|format(visit.total_amount or 0) }}</b></td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<hr class="my-4">
+
+<h5>+ Προσθήκη νέου σημείου</h5>
+<form method="post" action="/visits/{{ visit.id }}/lines/new" class="card card-body">
+  <div class="row g-2">
+    <div class="col-md-3">
+      <label class="form-label">Κατηγορία</label>
+      <input name="category" class="form-control" placeholder="π.χ. Κινητήρας" required>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Σημείο</label>
+      <input name="item_name" class="form-control" placeholder="π.χ. Βάσεις μηχανής" required>
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="add_to_master" value="1" id="mem">
+        <label class="form-check-label" for="mem">Να μπει μόνιμα στη μνήμη</label>
+      </div>
+    </div>
+    <div class="col-12 d-flex justify-content-end">
+      <button class="btn btn-success">Προσθήκη</button>
+    </div>
+  </div>
+</form>
+
+{% endblock %}
