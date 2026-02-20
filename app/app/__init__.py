@@ -1,1 +1,0 @@
-# Stefanos Garage package
