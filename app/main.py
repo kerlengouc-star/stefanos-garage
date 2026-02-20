@@ -482,3 +482,23 @@ def email_send(visit_id: int, request: Request, db: Session = Depends(get_db)):
             {"request": request, "user": u, "flash": f"Σφάλμα email: {e}"},
             status_code=500,
         )
+        @app.post("/visits/{visit_id}/lines/{line_id}/delete")
+def delete_line(visit_id: int, line_id: int, request: Request, db: Session = Depends(get_db)):
+    u = current_user(request, db)
+    if not u:
+        return RedirectResponse("/login", status_code=302)
+
+    ln = db.query(VisitChecklistLine).filter(
+        VisitChecklistLine.id == line_id,
+        VisitChecklistLine.visit_id == visit_id
+    ).first()
+
+    if ln:
+        db.delete(ln)
+        db.commit()
+
+    visit = db.query(Visit).filter(Visit.id == visit_id).first()
+    if visit:
+        recalc_totals(db, visit)
+
+    return RedirectResponse(f"/visits/{visit_id}", status_code=302)
