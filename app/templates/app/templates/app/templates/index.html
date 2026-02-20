@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h3 class="mb-0">Επισκέψεις</h3>
+  <a class="btn btn-success" href="/visits/new">+ Νέα Επίσκεψη</a>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-striped mb-0">
+      <thead>
+        <tr>
+          <th>Job</th><th>Ημ/νία</th><th>Αρ. Εγγραφής</th><th>Πελάτης</th><th>Status</th><th class="text-end">Σύνολο</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in visits %}
+        <tr>
+          <td><a href="/visits/{{ v.id }}"><b>{{ v.job_no }}</b></a></td>
+          <td>{{ v.date_in.strftime("%Y-%m-%d %H:%M") if v.date_in else "" }}</td>
+          <td>{{ v.plate_number or "" }}</td>
+          <td>{{ v.customer_name or "" }}</td>
+          <td><span class="badge badge-soft">{{ v.status }}</span></td>
+          <td class="text-end">{{ "%.2f"|format(v.total_amount or 0) }} €</td>
+        </tr>
+        {% endfor %}
+        {% if visits|length == 0 %}
+        <tr><td colspan="6" class="text-center text-muted py-4">Δεν υπάρχουν επισκέψεις ακόμα.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
