@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Visit Details</h2>
+
+<p><strong>Company:</strong> {{ visit.company.name }}</p>
+<p><strong>Date:</strong> {{ visit.date }}</p>
+<p><strong>Inspector:</strong> {{ visit.inspector_name }}</p>
+
+<h3>Checklist</h3>
+
+<table border="1" cellpadding="5">
+    <tr>
+        <th>Item</th>
+        <th>Status</th>
+        <th>Comments</th>
+    </tr>
+    {% for line in visit.checklist_lines %}
+    <tr>
+        <td>{{ line.item.name }}</td>
+        <td>{{ line.status }}</td>
+        <td>{{ line.comments }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<br>
+<a href="/">Back to Dashboard</a>
+{% endblock %}
