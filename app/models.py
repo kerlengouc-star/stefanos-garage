@@ -69,9 +69,12 @@ class VisitChecklistLine(Base):
 
     category = Column(String(120), nullable=False)
     item_name = Column(String(255), nullable=False)
-
+    
     result = Column(String(50), default="OK")  # OK / Θέλει έλεγχο / Αλλαγή
     notes = Column(Text, nullable=True)
+    
+    parts_code = Column(String, nullable=True)
+    parts_qty = Column(Integer, default=0)
 
     parts_cost = Column(Numeric(10, 2), default=0)
     labor_cost = Column(Numeric(10, 2), default=0)
