@@ -45,7 +45,10 @@
 
   <div class="d-flex justify-content-between align-items-center mb-2">
     <h5 class="mb-0">Checklist</h5>
-    <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
+    <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a><a class="btn btn-outline-primary btn-sm"
+   href="mailto:{{ visit.email or '' }}?subject=Job%20Card%20{{ visit.job_no }}&body=Καλησπέρα,%0A%0AJob%20Card%20PDF:%20https://stefanos-garage.onrender.com/visits/{{ visit.id }}/pdf%0A">
+  Email PDF Link
+</a>
   </div>
 
   <div class="table-responsive">
