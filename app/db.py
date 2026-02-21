@@ -26,3 +26,20 @@ def get_db():
         yield db
     finally:
         db.close()
+from sqlalchemy import text
+
+def ensure_schema(engine):
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE visit_checklist_lines ADD COLUMN parts_code VARCHAR"))
+        except Exception:
+            pass
+
+        try:
+            conn.execute(text("ALTER TABLE visit_checklist_lines ADD COLUMN parts_qty INTEGER DEFAULT 0"))
+        except Exception:
+            pass
+
+        conn.commit()
+
+ensure_schema(engine)
