@@ -554,3 +554,40 @@ def delete_line(visit_id: int, line_id: int, request: Request, db: Session = Dep
         recalc_totals(db, visit)
 
     return RedirectResponse(f"/visits/{visit_id}", status_code=302)
+@app.post("/visits/{visit_id}/save_all")
+async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
+    u = current_user(request, db)
+    if not u:
+        return RedirectResponse("/login", status_code=302)
+
+    form = await request.form()
+
+    visit = db.query(Visit).filter(Visit.id == visit_id).first()
+    if not visit:
+        return RedirectResponse("/", status_code=302)
+
+    # Update visit info
+    visit.plate_number = (form.get("plate_number") or "").strip()
+    visit.vin = (form.get("vin") or "").strip()
+    visit.model = (form.get("model") or "").strip()
+    visit.customer_name = (form.get("customer_name") or "").strip()
+    visit.phone = (form.get("phone") or "").strip()
+    visit.email = (form.get("email") or "").strip()
+    visit.km = (form.get("km") or "").strip()
+    visit.customer_complaint = (form.get("customer_complaint") or "").strip()
+
+    # Update all checklist lines
+    lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
+    for ln in lines:
+        ln.result = (form.get(f"result_{ln.id}") or ln.result or "OK").strip()
+        ln.notes = (form.get(f"notes_{ln.id}") or "").strip()
+        ln.parts_code = (form.get(f"parts_code_{ln.id}") or "").strip()
+
+        qty_raw = (form.get(f"parts_qty_{ln.id}") or "0").strip()
+        try:
+            ln.parts_qty = int(qty_raw) if qty_raw else 0
+        except ValueError:
+            ln.parts_qty = 0
+
+    db.commit()
+    return RedirectResponse(f"/visits/{visit_id}", status_code=302)
