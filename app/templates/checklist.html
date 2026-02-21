@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h3 class="mb-3">Checklist Μνήμη (Edit / Delete)</h3>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-striped mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Κατηγορία</th>
+          <th>Σημείο</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr>
+          <form method="post" action="/checklist/{{ it.id }}/update">
+            <td><input class="form-control" name="category" value="{{ it.category }}"></td>
+            <td><input class="form-control" name="name" value="{{ it.name }}"></td>
+            <td class="text-end" style="white-space:nowrap;">
+              <button class="btn btn-sm btn-outline-primary">Update</button>
+          </form>
+              <form method="post" action="/checklist/{{ it.id }}/delete" style="display:inline;">
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Να διαγραφεί από τη μνήμη;')">Delete</button>
+              </form>
+            </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
