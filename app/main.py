@@ -64,7 +64,7 @@ def ensure_admin(db: Session):
 
     u = db.query(User).filter(User.email == email).first()
     if not u:
-        u = User(email=email, name="Admin", hashed_password=pwd_context.hash(password))
+        u = User(email=email, hashed_password=pwd_context.hash(password))
         db.add(u)
         db.commit()
 
