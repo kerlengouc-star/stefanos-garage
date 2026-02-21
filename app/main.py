@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from decimal import Decimal
 
+from fastapi.responses import PlainTextResponse
 from fastapi import FastAPI, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -203,26 +204,20 @@ def new_visit(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse(f"/visits/{visit.id}", status_code=302)
 
 
-@app.get("/visits/{visit_id}", response_class=HTMLResponse)
-def view_visit(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    u = current_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
+    try:
+        pdf_bytes = build_jobcard_pdf(company, visit_d, lines_d)
 
-    visit = db.query(Visit).filter(Visit.id == visit_id).first()
-    if not visit:
-        return RedirectResponse("/", status_code=302)
-
-    lines = (
-        db.query(VisitChecklistLine)
-        .filter(VisitChecklistLine.visit_id == visit.id)
-        .order_by(VisitChecklistLine.category, VisitChecklistLine.item_name)
-        .all()
-    )
-    return templates.TemplateResponse(
-        "visit.html", {"request": request, "user": u, "visit": visit, "lines": lines}
-    )
-
+        filename = f'job_{visit_d["job_no"]}.pdf'
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+    except Exception as e:
+        return PlainTextResponse(
+            f"PDF ERROR: {type(e).__name__}: {str(e)}",
+            status_code=500
+        )
 
 @app.post("/visits/{visit_id}/update")
 def update_visit(
