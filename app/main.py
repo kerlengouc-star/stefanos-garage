@@ -8,143 +8,25 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from passlib.context import CryptContext
-from itsdangerous import URLSafeSerializer, BadSignature
-
-from .db import get_db, engine
-from .models import User, ChecklistItem, Visit, VisitChecklistLine
+from .db import get_db
+from .models import ChecklistItem, Visit, VisitChecklistLine
 from .pdf_utils import build_jobcard_pdf
 
-
 app = FastAPI()
-
 templates = Jinja2Templates(directory="app/templates")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "change-me-please-very-secret")
-serializer = URLSafeSerializer(SESSION_SECRET, salt="session")
-
 
 # -----------------------------
-# Helpers
-# -----------------------------
-def set_session(resp: Response, user_id: int):
-    token = serializer.dumps({"uid": user_id})
-    resp.set_cookie("session", token, httponly=True, samesite="lax")
-
-
-def clear_session(resp: Response):
-    resp.delete_cookie("session")
-
-
-def current_user(request: Request, db: Session) -> Optional[User]:
-    token = request.cookies.get("session")
-    if not token:
-        return None
-    try:
-        data = serializer.loads(token)
-        uid = data.get("uid")
-        if not uid:
-            return None
-        return db.query(User).filter(User.id == int(uid)).first()
-    except BadSignature:
-        return None
-    except Exception:
-        return None
-
-
-def require_user(request: Request, db: Session) -> Optional[User]:
-    u = current_user(request, db)
-    return u
-
-
-def ensure_admin(db: Session):
-    email = os.getenv("ADMIN_EMAIL", "admin@garage.local").strip().lower()
-    password = os.getenv("ADMIN_PASSWORD", "123456").strip()
-
-    u = db.query(User).filter(User.email == email).first()
-    if not u:
-        u = User(email=email, hashed_password=pwd_context.hash(password))
-        db.add(u)
-        db.commit()
-
-
-# -----------------------------
-# Startup
-# -----------------------------
-@app.on_event("startup")
-def on_startup():
-    # create tables (if your db.py already creates them, it's ok)
-    try:
-        from .models import Base  # noqa
-        Base.metadata.create_all(bind=engine)
-    except Exception:
-        pass
-
-    # ensure admin user exists
-    from .db import SessionLocal
-    db = SessionLocal()
-    try:
-        ensure_admin(db)
-    finally:
-        db.close()
-
-
-# -----------------------------
-# Auth
-# -----------------------------
-@app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request, db: Session = Depends(get_db)):
-    return templates.TemplateResponse("login.html", {"request": request, "user": None, "error": None})
-
-
-@app.post("/login")
-def login_post(
-    request: Request,
-    email: str = Form(...),
-    password: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    email2 = (email or "").strip().lower()
-    u = db.query(User).filter(User.email == email2).first()
-    if not u or not pwd_context.verify(password, u.hashed_password):
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "user": None, "error": "Λάθος email ή password"},
-            status_code=400,
-        )
-
-    resp = RedirectResponse("/", status_code=302)
-    set_session(resp, u.id)
-    return resp
-
-
-@app.get("/logout")
-def logout():
-    resp = RedirectResponse("/login", status_code=302)
-    clear_session(resp)
-    return resp
-
-
-# -----------------------------
-# Index / Visits
+# Index / Visits (NO LOGIN)
 # -----------------------------
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     visits = db.query(Visit).order_by(Visit.id.desc()).limit(200).all()
-    return templates.TemplateResponse("index.html", {"request": request, "user": u, "visits": visits})
+    return templates.TemplateResponse("index.html", {"request": request, "user": None, "visits": visits})
 
 
 @app.post("/visits/new")
 def create_visit(request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     # create visit
     v = Visit(
         job_no=f"JOB-{(db.query(Visit).count() + 1)}",
@@ -181,10 +63,6 @@ def create_visit(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/visits/{visit_id}", response_class=HTMLResponse)
 def visit_page(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
@@ -195,16 +73,12 @@ def visit_page(visit_id: int, request: Request, db: Session = Depends(get_db)):
 
     return templates.TemplateResponse(
         "visit.html",
-        {"request": request, "user": u, "visit": visit, "lines": lines},
+        {"request": request, "user": None, "visit": visit, "lines": lines},
     )
 
 
 @app.post("/visits/{visit_id}/save_all")
 async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     form = await request.form()
 
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
@@ -247,10 +121,6 @@ async def add_line(
     add_to_master: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     v = db.query(Visit).filter(Visit.id == visit_id).first()
     if not v:
         return RedirectResponse("/", status_code=302)
@@ -279,10 +149,6 @@ async def add_line(
 # -----------------------------
 @app.get("/visits/{visit_id}/pdf")
 def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
@@ -341,10 +207,6 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
 # -----------------------------
 @app.get("/search", response_class=HTMLResponse)
 def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     q2 = (q or "").strip()
     results = []
     if q2:
@@ -359,7 +221,7 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
             Visit.job_no.ilike(like),
         )).order_by(Visit.id.desc()).limit(200).all()
 
-    return templates.TemplateResponse("search.html", {"request": request, "user": u, "q": q2, "results": results})
+    return templates.TemplateResponse("search.html", {"request": request, "user": None, "q": q2, "results": results})
 
 
 # -----------------------------
@@ -367,12 +229,8 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
 # -----------------------------
 @app.get("/checklist", response_class=HTMLResponse)
 def checklist_admin(request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     items = db.query(ChecklistItem).order_by(ChecklistItem.category, ChecklistItem.name).all()
-    return templates.TemplateResponse("checklist.html", {"request": request, "user": u, "items": items})
+    return templates.TemplateResponse("checklist.html", {"request": request, "user": None, "items": items})
 
 
 @app.post("/checklist/{item_id}/update")
@@ -383,10 +241,6 @@ def checklist_update(
     name: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
     if it:
         it.category = (category or "").strip()
@@ -397,10 +251,6 @@ def checklist_update(
 
 @app.post("/checklist/{item_id}/delete")
 def checklist_delete(item_id: int, request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
     it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
     if it:
         db.delete(it)
