@@ -395,6 +395,9 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
             "line_total": float(ln.line_total or 0),
         }
         for ln in lines
+                if form.get(f"del_{ln.id}") == "1":
+            db.delete(ln)
+            continue
     ]
 
     pdf_bytes = build_jobcard_pdf(company_dict, visit_dict, lines_list)
