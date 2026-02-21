@@ -346,6 +346,8 @@ def add_new_line(
     return RedirectResponse(f"/visits/{visit_id}", status_code=302)
 
 
+from fastapi import Response  # αν το έχεις ήδη πιο πάνω, μην το διπλοβάλεις
+
 @app.get("/visits/{visit_id}/pdf")
 def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
     u = current_user(request, db)
@@ -356,55 +358,51 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    company = db.query(Company).first()
-    lines = (
-        db.query(VisitChecklistLine)
-        .filter(VisitChecklistLine.visit_id == visit_id)
-        .order_by(VisitChecklistLine.category, VisitChecklistLine.item_name)
-        .all()
-    )
+    lines = db.query(VisitChecklistLine).filter(
+        VisitChecklistLine.visit_id == visit_id
+    ).order_by(VisitChecklistLine.id.asc()).all()
 
-    company_dict = {
-        "name": company.name if company else "",
-        "address": company.address if company else "",
-        "tel": company.tel if company else "",
-        "fax": company.fax if company else "",
-        "email": company.email if company else "",
-        "vat": company.vat if company else "",
-        "tax_id": company.tax_id if company else "",
+    company = {
+        "name": "O&S STEPHANOU LTD",
+        "lines": [
+            "Michael Paridi 3, Palouriotissa",
+            "Tel: 22436990-22436992",
+            "Fax: 22437001",
+            "Email: osstephanou@gmail.com",
+            "VAT: 10079915R | TAX: 12079915T",
+        ],
     }
-    visit_dict = {
-        "job_no": visit.job_no,
-        "date_in": (visit.date_in.strftime("%Y-%m-%d %H:%M") if visit.date_in else ""),
-        "plate_number": visit.plate_number,
-        "vin": visit.vin,
-        "customer_name": visit.customer_name,
-        "phone": visit.phone,
-        "email": visit.email,
-        "model": visit.model,
-        "km": visit.km,
-        "customer_complaint": visit.customer_complaint,
-        "total_amount": float(visit.total_amount or 0),
-    }
-    lines_list = [
-        {
-            "item_name": ln.item_name,
-            "result": ln.result,
-            "parts_cost": float(ln.parts_cost or 0),
-            "labor_cost": float(ln.labor_cost or 0),
-            "line_total": float(ln.line_total or 0),
-        }
-        for ln in lines
-              
-    ]
 
-    pdf_bytes = build_jobcard_pdf(company_dict, visit_dict, lines_list)
+    visit_d = {
+        "job_no": visit.job_no or str(visit.id),
+        "plate_number": visit.plate_number or "",
+        "vin": visit.vin or "",
+        "model": visit.model or "",
+        "km": visit.km or "",
+        "customer_name": visit.customer_name or "",
+        "phone": visit.phone or "",
+        "email": visit.email or "",
+        "customer_complaint": visit.customer_complaint or "",
+    }
+
+    lines_d = []
+    for ln in lines:
+        lines_d.append({
+            "category": ln.category or "",
+            "item_name": ln.item_name or "",
+            "result": ln.result or "",
+            "parts_code": getattr(ln, "parts_code", "") or "",
+            "parts_qty": int(getattr(ln, "parts_qty", 0) or 0),
+        })
+
+    pdf_bytes = build_jobcard_pdf(company, visit_d, lines_d)
+
+    filename = f'job_{visit_d["job_no"]}.pdf'
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{visit.job_no}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
-
 
 @app.get("/visits/{visit_id}/email", response_class=HTMLResponse)
 def email_send(visit_id: int, request: Request, db: Session = Depends(get_db)):
