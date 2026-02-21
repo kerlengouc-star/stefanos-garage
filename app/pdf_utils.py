@@ -3,8 +3,12 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from datetime import datetime
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase import pdfmetrics
+import os
 
-def build_jobcard_pdf(company: dict, visit: dict, lines: list[dict]) -> bytes:
+def build_jobcard_pdf(company: dict, visit: dict, lines: list[dict]) -> bytes:font_path = os.path.join(os.path.dirname(__file__), "assets", "arial.ttf")
+pdfmetrics.registerFont(TTFont("ArialUnicode", font_path))
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
