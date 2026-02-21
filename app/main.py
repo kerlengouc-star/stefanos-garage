@@ -615,3 +615,42 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
     return templates.TemplateResponse("search.html", {
         "request": request, "user": u, "q": q2, "results": results
     })
+    @app.get("/checklist", response_class=HTMLResponse)
+def checklist_admin(request: Request, db: Session = Depends(get_db)):
+    u = current_user(request, db)
+    if not u:
+        return RedirectResponse("/login", status_code=302)
+
+    items = db.query(ChecklistItem).order_by(ChecklistItem.category, ChecklistItem.name).all()
+    return templates.TemplateResponse("checklist.html", {"request": request, "user": u, "items": items})
+
+
+@app.post("/checklist/{item_id}/update")
+def checklist_update(item_id: int,
+                     request: Request,
+                     category: str = Form(...),
+                     name: str = Form(...),
+                     db: Session = Depends(get_db)):
+    u = current_user(request, db)
+    if not u:
+        return RedirectResponse("/login", status_code=302)
+
+    it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
+    if it:
+        it.category = category.strip()
+        it.name = name.strip()
+        db.commit()
+    return RedirectResponse("/checklist", status_code=302)
+
+
+@app.post("/checklist/{item_id}/delete")
+def checklist_delete(item_id: int, request: Request, db: Session = Depends(get_db)):
+    u = current_user(request, db)
+    if not u:
+        return RedirectResponse("/login", status_code=302)
+
+    it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
+    if it:
+        db.delete(it)
+        db.commit()
+    return RedirectResponse("/checklist", status_code=302)
