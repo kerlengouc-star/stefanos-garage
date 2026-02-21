@@ -9,8 +9,7 @@ from datetime import datetime
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 import os
-
-def font_path = os.path.join(os.path.dirname(__file__), "assets", "arial.ttf")
+font_path = os.path.join(os.path.dirname(__file__), "assets", "arial.ttf")
 pdfmetrics.registerFont(TTFont("ArialUnicode", font_path))build_jobcard_pdf(company: dict, visit: dict, lines: list[dict]) -> bytes:font_path = os.path.join(os.path.dirname(__file__), "assets", "arial.ttf")
 pdfmetrics.registerFont(TTFont("ArialUnicode", font_path))
     buf = BytesIO()
