@@ -55,7 +55,6 @@
     <table class="table table-sm table-striped mb-0 align-middle">
       <thead>
         <tr><td class="text-center">
-  <input type="checkbox" name="del_{{ ln.id }}" value="1">
 </td>
           <th>Κατηγορία</th>
           <th>Σημείο</th>
@@ -64,13 +63,11 @@
           <th>Parts Code</th>
           <th class="text-end">Qty</th>
         </tr><td class="text-center">
-  <input type="checkbox" name="del_{{ ln.id }}" value="1">
 </td>
       </thead>
       <tbody>
         {% for ln in lines %}
         <tr><td class="text-center">
-  <input type="checkbox" name="del_{{ ln.id }}" value="1">
 </td>
           <td>{{ ln.category }}</td>
           <td>{{ ln.item_name }}</td>
@@ -85,7 +82,6 @@
           <td style="width:160px;"><input name="parts_code_{{ ln.id }}" class="form-control form-control-sm" value="{{ ln.parts_code or '' }}"></td>
           <td style="width:90px;"><input name="parts_qty_{{ ln.id }}" class="form-control form-control-sm text-end" value="{{ ln.parts_qty or 0 }}"></td>
         </tr><td class="text-center">
-  <input type="checkbox" name="del_{{ ln.id }}" value="1">
 </td>
         {% endfor %}
       </tbody>
@@ -123,4 +119,3 @@
 </form>
 
 {% endblock %}
-<th class="text-center">Delete?</th>
