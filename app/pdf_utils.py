@@ -49,15 +49,15 @@ pdfmetrics.registerFont(TTFont("ArialUnicode", font_path))
     y -= 7*mm
     complaint = (visit.get("customer_complaint") or "").strip()
     if complaint:
-        c.setFont("Helvetica-Bold", 9)
+        pdf.setFont("ArialUnicode", 10)
         c.drawString(18*mm, y, "Παράπονο/Αίτημα πελάτη:")
         y -= 5*mm
-        c.setFont("Helvetica", 9)
+        pdf.setFont("ArialUnicode", 10)
         c.drawString(18*mm, y, complaint[:1100])
         y -= 7*mm
 
     # Table header
-    c.setFont("Helvetica-Bold", 9)
+    pdf.setFont("ArialUnicode", 10)
     c.drawString(18*mm, y, "Σημείο")
     c.drawString(95*mm, y, "Αποτέλεσμα")
     c.drawString(130*mm, y, "Parts")
@@ -67,13 +67,12 @@ pdfmetrics.registerFont(TTFont("ArialUnicode", font_path))
     c.line(18*mm, y, 195*mm, y)
     y -= 6*mm
 
-    c.setFont("Helvetica", 8)
+   pdf.setFont("ArialUnicode", 10)
     for ln in lines:
         if y < 20*mm:
             c.showPage()
             y = height - 18*mm
-            c.setFont("Helvetica", 8)
-
+            pdf.setFont("ArialUnicode", 10)
         item = ln.get("item_name","")
         res = ln.get("result","")
         parts = f"{ln.get('parts_cost',0):.2f}"
@@ -88,10 +87,10 @@ pdfmetrics.registerFont(TTFont("ArialUnicode", font_path))
         y -= 5*mm
 
     y -= 6*mm
-    c.setFont("Helvetica-Bold", 10)
+    pdf.setFont("ArialUnicode", 10)
     c.drawRightString(195*mm, y, f"Σύνολο: {visit.get('total_amount',0):.2f} €")
 
-    c.setFont("Helvetica", 7)
+    pdf.setFont("ArialUnicode", 10)
     c.drawString(18*mm, 10*mm, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
     c.save()
