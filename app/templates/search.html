@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h3 class="mb-3">Αναζήτηση</h3>
+
+<form method="get" action="/search" class="mb-3">
+  <div class="input-group">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="Όνομα / Τηλ / Email / Πινακίδα / VIN / Μοντέλο">
+    <button class="btn btn-primary">Search</button>
+  </div>
+</form>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-striped mb-0">
+      <thead>
+        <tr><th>Job</th><th>Πινακίδα</th><th>Πελάτης</th><th>Τηλ</th><th>Email</th></tr>
+      </thead>
+      <tbody>
+        {% for v in results %}
+        <tr>
+          <td><a href="/visits/{{ v.id }}"><b>{{ v.job_no }}</b></a></td>
+          <td>{{ v.plate_number or "" }}</td>
+          <td>{{ v.customer_name or "" }}</td>
+          <td>{{ v.phone or "" }}</td>
+          <td>{{ v.email or "" }}</td>
+        </tr>
+        {% endfor %}
+        {% if q and results|length == 0 %}
+        <tr><td colspan="5" class="text-center text-muted py-4">Δεν βρέθηκε κάτι.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
