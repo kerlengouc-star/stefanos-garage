@@ -51,18 +51,24 @@
   <div class="table-responsive">
     <table class="table table-sm table-striped mb-0 align-middle">
       <thead>
-        <tr>
+        <tr><td class="text-center">
+  <input type="checkbox" name="del_{{ ln.id }}" value="1">
+</td>
           <th>Κατηγορία</th>
           <th>Σημείο</th>
           <th>Αποτέλεσμα</th>
           <th>Σημείωση</th>
           <th>Parts Code</th>
           <th class="text-end">Qty</th>
-        </tr>
+        </tr><td class="text-center">
+  <input type="checkbox" name="del_{{ ln.id }}" value="1">
+</td>
       </thead>
       <tbody>
         {% for ln in lines %}
-        <tr>
+        <tr><td class="text-center">
+  <input type="checkbox" name="del_{{ ln.id }}" value="1">
+</td>
           <td>{{ ln.category }}</td>
           <td>{{ ln.item_name }}</td>
           <td style="min-width:160px;">
@@ -75,7 +81,9 @@
           <td><input name="notes_{{ ln.id }}" class="form-control form-control-sm" value="{{ ln.notes or '' }}"></td>
           <td style="width:160px;"><input name="parts_code_{{ ln.id }}" class="form-control form-control-sm" value="{{ ln.parts_code or '' }}"></td>
           <td style="width:90px;"><input name="parts_qty_{{ ln.id }}" class="form-control form-control-sm text-end" value="{{ ln.parts_qty or 0 }}"></td>
-        </tr>
+        </tr><td class="text-center">
+  <input type="checkbox" name="del_{{ ln.id }}" value="1">
+</td>
         {% endfor %}
       </tbody>
     </table>
