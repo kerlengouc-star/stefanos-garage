@@ -616,7 +616,7 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
     return templates.TemplateResponse("search.html", {
         "request": request, "user": u, "q": q2, "results": results
     })
-    @app.get("/checklist", response_class=HTMLResponse)
+@app.get("/checklist", response_class=HTMLResponse)
 def checklist_admin(request: Request, db: Session = Depends(get_db)):
     u = current_user(request, db)
     if not u:
