@@ -591,3 +591,27 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
 
     db.commit()
     return RedirectResponse(f"/visits/{visit_id}", status_code=302)
+from sqlalchemy import or_
+
+@app.get("/search", response_class=HTMLResponse)
+def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
+    u = current_user(request, db)
+    if not u:
+        return RedirectResponse("/login", status_code=302)
+
+    q2 = (q or "").strip()
+    results = []
+    if q2:
+        like = f"%{q2}%"
+        results = db.query(Visit).filter(or_(
+            Visit.customer_name.ilike(like),
+            Visit.phone.ilike(like),
+            Visit.email.ilike(like),
+            Visit.plate_number.ilike(like),
+            Visit.vin.ilike(like),
+            Visit.model.ilike(like),
+        )).order_by(Visit.id.desc()).limit(200).all()
+
+    return templates.TemplateResponse("search.html", {
+        "request": request, "user": u, "q": q2, "results": results
+    })
