@@ -1,6 +1,6 @@
 import os
 import traceback
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, Request, Depends, Form, Response
@@ -61,18 +61,21 @@ async def all_exception_handler(request: Request, exc: Exception):
 def startup():
     Base.metadata.create_all(bind=engine)
 
-    # ✅ Safe DB migration for existing installs (SQLite):
-    # add exclude_from_print if missing
+    # ✅ Safe DB migration (SQLite): add exclude_from_print if missing
     try:
         with engine.connect() as conn:
             try:
                 cols = conn.execute(text("PRAGMA table_info(visit_checklist_lines)")).fetchall()
                 colnames = {c[1] for c in cols}
                 if "exclude_from_print" not in colnames:
-                    conn.execute(text("ALTER TABLE visit_checklist_lines ADD COLUMN exclude_from_print BOOLEAN NOT NULL DEFAULT 0"))
+                    conn.execute(
+                        text(
+                            "ALTER TABLE visit_checklist_lines "
+                            "ADD COLUMN exclude_from_print BOOLEAN NOT NULL DEFAULT 0"
+                        )
+                    )
                     conn.commit()
             except Exception:
-                # Non-sqlite or PRAGMA not supported; ignore
                 pass
     except Exception:
         pass
@@ -97,8 +100,11 @@ def combine_dt(d: Optional[str], t: Optional[str]):
 
 def printable_lines(db: Session, visit_id: int):
     """
-    ✅ "Όπως το PDF": τυπώνουμε ΜΟΝΟ ό,τι είναι CHECK/REPAIR,
-    ΕΚΤΟΣ αν το έχεις εξαιρέσει (exclude_from_print=True).
+    ✅ Print/PDF rules:
+    - INCLUDE if result is CHECK or REPAIR
+      OR parts_code is filled
+      OR parts_qty > 0
+    - EXCLUDE if exclude_from_print == True
     """
     lines = (
         db.query(VisitChecklistLine)
@@ -106,11 +112,19 @@ def printable_lines(db: Session, visit_id: int):
         .order_by(VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc())
         .all()
     )
+
     out = []
     for ln in lines:
         r = (ln.result or "OK").upper().strip()
-        if r in ("CHECK", "REPAIR") and not bool(getattr(ln, "exclude_from_print", False)):
+        parts_code = (getattr(ln, "parts_code", "") or "").strip()
+        parts_qty = int(getattr(ln, "parts_qty", 0) or 0)
+
+        include = (r in ("CHECK", "REPAIR")) or (parts_code != "") or (parts_qty > 0)
+        excluded = bool(getattr(ln, "exclude_from_print", False))
+
+        if include and not excluded:
             out.append(ln)
+
     return out
 
 
@@ -216,7 +230,7 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
         except ValueError:
             ln.parts_qty = 0
 
-        # ✅ remember exclusions
+        # ✅ remember exclusions (needs hidden input + checkbox in visit.html)
         ex = (form.get(f"exclude_{ln.id}") or "0").strip()
         ln.exclude_from_print = (ex == "1")
 
@@ -325,10 +339,6 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
 
 @app.get("/history", response_class=HTMLResponse)
 def history(request: Request, date_from: str = "", date_to: str = "", db: Session = Depends(get_db)):
-    """
-    Ιστορικό με φίλτρο date_in (άφιξη).
-    Αν δεν βάλεις ημερομηνίες -> δείχνει τελευταία 200.
-    """
     q = db.query(Visit)
 
     df = (date_from or "").strip()
