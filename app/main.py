@@ -437,3 +437,45 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
 @app.get("/__ping")
 def __ping():
     return {"ok": True, "where": "app/main.py"}
+# ==========================
+# CHECKLIST (MASTER) ROUTES
+# ==========================
+
+@app.get("/checklist", response_class=HTMLResponse)
+def checklist_page(request: Request, db: Session = Depends(get_db)):
+    seed_master_if_empty(db)
+    items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.name.asc()).all()
+    return templates.TemplateResponse("checklist.html", {"request": request, "items": items})
+
+
+# Alias (σε περίπτωση που κάπου υπάρχει λάθος link)
+@app.get("/check_list", response_class=HTMLResponse)
+def checklist_page_alias(request: Request, db: Session = Depends(get_db)):
+    return checklist_page(request, db)
+
+
+@app.post("/checklist/add")
+async def checklist_add(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    cat = (form.get("category") or "").strip()
+    name = (form.get("name") or "").strip()
+    if cat and name:
+        db.add(ChecklistItem(category=cat, name=name))
+        db.commit()
+    return RedirectResponse("/checklist", status_code=302)
+
+
+@app.post("/checklist/delete")
+async def checklist_delete(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    item_id = (form.get("item_id") or "").strip()
+    try:
+        iid = int(item_id)
+    except ValueError:
+        return RedirectResponse("/checklist", status_code=302)
+
+    it = db.query(ChecklistItem).filter(ChecklistItem.id == iid).first()
+    if it:
+        db.delete(it)
+        db.commit()
+    return RedirectResponse("/checklist", status_code=302)
