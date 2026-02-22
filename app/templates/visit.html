@@ -16,12 +16,18 @@
     <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}?mode=all">Όλα</a>
     <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}?mode=selected">Επιλεγμένα</a>
 
-    <!-- Τα κουμπιά που ζήτησες -->
-    <button form="visitForm" class="btn btn-primary btn-sm" type="submit" name="after_save" value="stay">
+    <!-- ✅ Τα κουμπιά που ζήτησες -->
+    <button form="visitForm"
+            class="btn btn-primary btn-sm"
+            type="submit"
+            onclick="document.getElementById('after_save').value='stay';">
       Save
     </button>
 
-    <button form="visitForm" class="btn btn-outline-primary btn-sm" type="submit" name="after_save" value="pdf">
+    <button form="visitForm"
+            class="btn btn-outline-primary btn-sm"
+            type="submit"
+            onclick="document.getElementById('after_save').value='pdf';">
       PDF
     </button>
 
@@ -29,7 +35,7 @@
       Print
     </a>
 
-    <!-- Email: ανοίγει το email app με link στο PDF (χωρίς να χαλάμε SMTP τώρα) -->
+    <!-- Email: ανοίγει το email app με link στο PDF (χωρίς SMTP ρυθμίσεις) -->
     <a class="btn btn-outline-primary btn-sm"
        href="mailto:{{ visit.email or '' }}?subject={{ ('Job ' ~ (visit.job_no or visit.id))|urlencode }}&body={{ ('Καλημέρα,%0D%0A%0D%0AΣας στέλνω το PDF:%0D%0A' ~ (request.base_url|string) ~ 'visits/' ~ visit.id ~ '/pdf%0D%0A%0D%0AΜε εκτίμηση,%0D%0AO&S STEPHANOU LTD')|safe }}">
       Email
@@ -40,7 +46,8 @@
 <form id="visitForm" method="post" action="/visits/{{ visit.id }}/save_all" autocomplete="off">
   <input type="hidden" name="mode" value="{{ mode }}">
   <input type="hidden" name="action" value="">
-  <input type="hidden" name="after_save" value="stay">
+  <!-- ✅ ένα ΜΟΝΟ after_save, για να δουλεύει σωστά το PDF -->
+  <input type="hidden" name="after_save" id="after_save" value="stay">
 
   <div class="card shadow-sm mb-3">
     <div class="card-body">
@@ -137,7 +144,7 @@
             </select>
           </div>
 
-          <!-- ✅ IMPORTANT: ΜΟΝΑΔΙΚΑ name+id ανά γραμμή -->
+          <!-- ✅ Μοναδικά ανά γραμμή -->
           <div class="col-md-2">
             <div class="small text-muted">Κωδικός Εξαρτήματος</div>
             <input class="form-control form-control-sm"
@@ -184,13 +191,13 @@
     </div>
   </div>
 
-  <!-- Κάτω μέρος: κρατάμε το + που ήδη δουλεύει -->
+  <!-- Κάτω μέρος: το + που ήδη δουλεύει -->
   <div class="card shadow-sm mb-3" id="addnew">
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center">
         <h6 class="m-0">+ Νέα Κατηγορία/Εργασία</h6>
         <button class="btn btn-success btn-sm" type="submit"
-                onclick="document.querySelector('input[name=action]').value='add_line';">
+                onclick="document.querySelector('input[name=action]').value='add_line'; document.getElementById('after_save').value='stay';">
           +
         </button>
       </div>
