@@ -2,55 +2,76 @@
 {% block content %}
 
 <div class="container py-4">
-
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="m-0">Stefanos Garage</h4>
-    <div class="d-flex gap-2 flex-wrap">
-      <a class="btn btn-outline-success btn-sm" href="/backup" target="_blank" rel="noopener">Backup</a>
-      <form method="post" action="/visits/new" class="m-0">
-        <button class="btn btn-primary btn-sm" type="submit">+ Νέα Επίσκεψη</button>
+    <h3 class="m-0">Stefanos Garage</h3>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="/checklist">Checklist</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/history">Ιστορικό</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/backup">Backup</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form class="row g-2" method="get" action="/">
+        <div class="col-md-10">
+          <input class="form-control" name="q" value="{{ q or '' }}"
+                 placeholder="Αναζήτηση: όνομα, τηλέφωνο, email, πινακίδα, μοντέλο, VIN, job...">
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-primary w-100" type="submit">Search</button>
+        </div>
       </form>
     </div>
   </div>
+
+  <form method="post" action="/visits/new" class="mb-3">
+    <button class="btn btn-success">+ Νέα Επίσκεψη</button>
+  </form>
 
   <div class="card shadow-sm">
     <div class="card-body">
       <h6 class="mb-2">Τελευταίες Επισκέψεις</h6>
 
-      <div class="table-responsive">
-        <table class="table table-sm align-middle">
-          <thead>
-            <tr>
-              <th>Job</th>
-              <th>Πελάτης</th>
-              <th>Αρ. Εγγραφής</th>
-              <th>Μοντέλο</th>
-              <th>Ημ/νία Άφιξης</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-          {% for v in visits %}
-            <tr>
-              <td>{{ v.job_no or v.id }}</td>
-              <td>{{ v.customer_name or '' }}</td>
-              <td>{{ v.plate_number or '' }}</td>
-              <td>{{ v.model or '' }}</td>
-              <td>{{ (v.date_in|string)[:16] if v.date_in else '' }}</td>
-              <td class="text-end">
-                <a class="btn btn-outline-dark btn-sm" href="/visits/{{ v.id }}?mode=selected">Άνοιγμα</a>
-                <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ v.id }}?mode=all">Δείξε Όλα</a>
-                <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}/pdf" target="_blank" rel="noopener">PDF</a>
-              </td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-
+      {% if visits|length == 0 %}
+        <div class="text-muted">Δεν βρέθηκαν επισκέψεις.</div>
+      {% else %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Job</th>
+                <th>Πελάτης</th>
+                <th>Τηλέφωνο</th>
+                <th>Πινακίδα</th>
+                <th>Μοντέλο</th>
+                <th>Ημ/νία Άφιξης</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for v in visits %}
+                <tr>
+                  <td>{{ v.id }}</td>
+                  <td>{{ v.job_no or '' }}</td>
+                  <td>{{ v.customer_name or '' }}</td>
+                  <td>{{ v.phone or '' }}</td>
+                  <td>{{ v.plate_number or '' }}</td>
+                  <td>{{ v.model or '' }}</td>
+                  <td>{% if v.date_in %}{{ v.date_in.strftime("%Y-%m-%d %H:%M") }}{% endif %}</td>
+                  <td class="text-end">
+                    <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}?mode=selected">Άνοιγμα</a>
+                    <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ v.id }}?mode=all">Όλα</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
     </div>
   </div>
-
 </div>
 
 {% endblock %}
