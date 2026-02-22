@@ -9,8 +9,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from .db import get_db
-from .models import ChecklistItem, Visit, VisitChecklistLine
+from .db import get_db, engine
+from .models import Base, ChecklistItem, Visit, VisitChecklistLine
 from .pdf_utils import build_jobcard_pdf
 
 
@@ -19,6 +19,12 @@ app = FastAPI()
 # ✅ Robust templates path (works on Render)
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+
+# ✅ Create DB tables automatically (fix: no such table)
+@app.on_event("startup")
+def startup():
+    Base.metadata.create_all(bind=engine)
 
 
 # ✅ Global debug error handler: shows the real error on screen
