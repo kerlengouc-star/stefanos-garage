@@ -1,4 +1,6 @@
 import os
+import io
+import json
 import traceback
 from datetime import datetime
 from typing import Optional
@@ -101,10 +103,11 @@ def combine_dt(d: Optional[str], t: Optional[str]):
 def printable_lines(db: Session, visit_id: int):
     """
     ✅ Print/PDF rules:
-    - INCLUDE if result is CHECK or REPAIR
+    INCLUDE if:
+      - result is CHECK or REPAIR
       OR parts_code is filled
       OR parts_qty > 0
-    - EXCLUDE if exclude_from_print == True
+    EXCLUDE if exclude_from_print == True
     """
     lines = (
         db.query(VisitChecklistLine)
@@ -128,6 +131,101 @@ def printable_lines(db: Session, visit_id: int):
     return out
 
 
+def _sqlite_db_file_path() -> Optional[str]:
+    """
+    Returns absolute path to sqlite file if engine is sqlite and file-based.
+    """
+    try:
+        if engine.url.get_backend_name() != "sqlite":
+            return None
+        dbname = engine.url.database  # can be relative
+        if not dbname or dbname == ":memory:":
+            return None
+        # Make absolute
+        if os.path.isabs(dbname):
+            return dbname
+        return os.path.abspath(dbname)
+    except Exception:
+        return None
+
+
+@app.get("/backup")
+def backup(db: Session = Depends(get_db)):
+    """
+    ✅ Backup:
+    - If SQLite: download the .db file (full backup)
+    - Else: JSON export of Visits + Lines + ChecklistItems
+    """
+    sqlite_path = _sqlite_db_file_path()
+    now = datetime.now().strftime("%Y-%m-%d_%H%M")
+
+    # --- SQLite full file backup
+    if sqlite_path and os.path.exists(sqlite_path):
+        with open(sqlite_path, "rb") as f:
+            data = f.read()
+        filename = f"stefanos_backup_{now}.db"
+        return Response(
+            content=data,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # --- JSON export (fallback)
+    visits = db.query(Visit).order_by(Visit.id.asc()).all()
+    lines = db.query(VisitChecklistLine).order_by(VisitChecklistLine.id.asc()).all()
+    items = db.query(ChecklistItem).order_by(ChecklistItem.id.asc()).all()
+
+    def dt(v):
+        return v.isoformat() if v else None
+
+    payload = {
+        "exported_at": datetime.now().isoformat(),
+        "engine": str(engine.url),
+        "visits": [
+            {
+                "id": v.id,
+                "job_no": getattr(v, "job_no", None),
+                "date_in": dt(getattr(v, "date_in", None)),
+                "date_out": dt(getattr(v, "date_out", None)),
+                "plate_number": getattr(v, "plate_number", ""),
+                "vin": getattr(v, "vin", ""),
+                "model": getattr(v, "model", ""),
+                "km": getattr(v, "km", ""),
+                "customer_name": getattr(v, "customer_name", ""),
+                "phone": getattr(v, "phone", ""),
+                "email": getattr(v, "email", ""),
+                "customer_complaint": getattr(v, "customer_complaint", ""),
+            }
+            for v in visits
+        ],
+        "visit_checklist_lines": [
+            {
+                "id": ln.id,
+                "visit_id": ln.visit_id,
+                "category": ln.category,
+                "item_name": ln.item_name,
+                "result": ln.result,
+                "notes": ln.notes,
+                "parts_code": getattr(ln, "parts_code", ""),
+                "parts_qty": int(getattr(ln, "parts_qty", 0) or 0),
+                "exclude_from_print": bool(getattr(ln, "exclude_from_print", False)),
+            }
+            for ln in lines
+        ],
+        "checklist_items": [
+            {"id": it.id, "category": it.category, "name": it.name} for it in items
+        ],
+    }
+
+    data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    filename = f"stefanos_backup_{now}.json"
+    return Response(
+        content=data,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Session = Depends(get_db)):
     seed_master_if_empty(db)
@@ -139,8 +237,11 @@ def index(request: Request, db: Session = Depends(get_db)):
 def create_visit(request: Request, db: Session = Depends(get_db)):
     seed_master_if_empty(db)
 
+    # ✅ Set date_in automatically to NOW
     v = Visit(
         job_no=f"JOB-{(db.query(Visit).count() + 1)}",
+        date_in=datetime.now(),
+        date_out=None,
         customer_name="",
         phone="",
         email="",
@@ -191,6 +292,10 @@ def visit_page(visit_id: int, request: Request, db: Session = Depends(get_db)):
 
 @app.post("/visits/{visit_id}/save_all")
 async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    ✅ Always saves, then redirects depending on button:
+      after_save = stay | print | pdf
+    """
     form = await request.form()
 
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
@@ -230,11 +335,17 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
         except ValueError:
             ln.parts_qty = 0
 
-        # ✅ remember exclusions (needs hidden input + checkbox in visit.html)
         ex = (form.get(f"exclude_{ln.id}") or "0").strip()
         ln.exclude_from_print = (ex == "1")
 
     db.commit()
+
+    after = (form.get("after_save") or "stay").strip().lower()
+    if after == "print":
+        return RedirectResponse(f"/visits/{visit_id}/print", status_code=302)
+    if after == "pdf":
+        return RedirectResponse(f"/visits/{visit_id}/pdf", status_code=302)
+
     return RedirectResponse(f"/visits/{visit_id}", status_code=302)
 
 
