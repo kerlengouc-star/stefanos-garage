@@ -20,14 +20,17 @@
 
     <div class="d-flex gap-2 flex-wrap">
       <a class="btn btn-outline-success btn-sm" href="/backup" target="_blank" rel="noopener">Backup</a>
-      <a class="btn btn-outline-primary btn-sm" href="/visits/{{ visit.id }}/pdf" target="_blank" rel="noopener">PDF</a>
-      <a class="btn btn-outline-dark btn-sm" href="/visits/{{ visit.id }}/print" target="_blank" rel="noopener">Print</a>
+      <button class="btn btn-outline-primary btn-sm" type="submit" form="jobform" name="after_save" value="pdf">Save + PDF</button>
+      <button class="btn btn-outline-dark btn-sm" type="submit" form="jobform" name="after_save" value="print">Save + Print</button>
       <a class="btn btn-outline-danger btn-sm" href="/">Πίσω</a>
     </div>
   </div>
 
   <form id="jobform" method="post" action="/visits/{{ visit.id }}/save_all" class="card shadow-sm">
     <div class="card-body">
+
+      <!-- ✅ κρατάμε mode για να μην αλλάζει -->
+      <input type="hidden" name="mode" value="{{ mode }}">
 
       <!-- Dates / Times -->
       <div class="row g-3 mb-3">
@@ -108,10 +111,10 @@
 
       <hr>
 
-      <!-- Checklist -->
       {% if lines|length == 0 %}
         <div class="alert alert-warning">
-          Δεν υπάρχουν επιλεγμένες γραμμές ακόμη. Πάτα “Δείξε όλα” για να δεις όλη τη λίστα.
+          Δεν υπάρχουν επιλεγμένες γραμμές ακόμη.
+          Πάτα “Δείξε όλα” για να δεις όλη τη λίστα.
         </div>
       {% endif %}
 
@@ -140,7 +143,8 @@
           <td><strong>{{ ln.item_name }}</strong></td>
 
           <td>
-            <select name="result_{{ ln.id }}" class="form-select form-select-sm">
+            <!-- ✅ θα το αλλάζει JS αυτόματα σε CHECK αν γράψεις parts/qty/notes -->
+            <select name="result_{{ ln.id }}" class="form-select form-select-sm js-result" data-id="{{ ln.id }}">
               <option value="OK" {% if (ln.result or 'OK') == 'OK' %}selected{% endif %}>OK</option>
               <option value="CHECK" {% if (ln.result or '') == 'CHECK' %}selected{% endif %}>CHECK</option>
               <option value="REPAIR" {% if (ln.result or '') == 'REPAIR' %}selected{% endif %}>REPAIR</option>
@@ -148,24 +152,28 @@
           </td>
 
           <td>
-            <input type="text" class="form-control form-control-sm"
+            <input type="text" class="form-control form-control-sm js-parts"
+                   data-id="{{ ln.id }}"
                    name="parts_code_{{ ln.id }}" value="{{ ln.parts_code or '' }}">
           </td>
 
           <td>
-            <input type="number" class="form-control form-control-sm"
+            <input type="number" class="form-control form-control-sm js-qty"
+                   data-id="{{ ln.id }}"
                    name="parts_qty_{{ ln.id }}" value="{{ ln.parts_qty or 0 }}">
           </td>
 
           <td>
-            <input type="text" class="form-control form-control-sm"
+            <input type="text" class="form-control form-control-sm js-notes"
+                   data-id="{{ ln.id }}"
                    name="notes_{{ ln.id }}" value="{{ ln.notes or '' }}">
           </td>
 
           <td>
             <input type="hidden" name="exclude_{{ ln.id }}" value="0">
             <div class="form-check">
-              <input class="form-check-input" type="checkbox"
+              <input class="form-check-input js-exclude" type="checkbox"
+                     data-id="{{ ln.id }}"
                      name="exclude_{{ ln.id }}" value="1"
                      {% if ln.exclude_from_print %}checked{% endif %}>
               <label class="form-check-label" style="font-size:13px;">
@@ -183,21 +191,18 @@
         {% endif %}
       {% endfor %}
 
-      <!-- Buttons -->
       <div class="d-flex gap-2 mt-3 flex-wrap">
         <button class="btn btn-success" type="submit" name="after_save" value="stay">Save (Όλα)</button>
-        <button class="btn btn-outline-dark" type="submit" name="after_save" value="print">Save + Print</button>
-        <button class="btn btn-outline-primary" type="submit" name="after_save" value="pdf">Save + PDF</button>
       </div>
 
       <hr>
 
-      <!-- ✅ Add new line WITHOUT losing anything (uses same form) -->
-      <h6 class="mb-2">+ Πρόσθεσε νέο πρόβλημα / έλεγχο</h6>
+      <!-- ✅ Add new line WITHOUT losing anything -->
+      <h6 class="mb-2" id="addnew">+ Πρόσθεσε νέο πρόβλημα / έλεγχο</h6>
       <div class="row g-2">
         <div class="col-md-4">
           <input class="form-control form-control-sm" name="new_category"
-                 placeholder="Κατηγορία" value="{{ 'ΒΑΣΙΚΑ ΣΤΟΙΧΕΙΑ ΟΧΗΜΑΤΟΣ' }}" required>
+                 placeholder="Κατηγορία" value="ΒΑΣΙΚΑ ΣΤΟΙΧΕΙΑ ΟΧΗΜΑΤΟΣ" required>
         </div>
         <div class="col-md-6">
           <input class="form-control form-control-sm" name="new_item_name"
@@ -215,7 +220,7 @@
       </div>
 
       <div class="text-muted mt-2" style="font-size:13px;">
-        ✔ Δεν θα χαθεί τίποτα: πρώτα κάνει Save, μετά προσθέτει.
+        ✔ Πατώντας “+” κάνει Save πρώτα και μετά προσθέτει. Η νέα γραμμή θα μπαίνει ως CHECK για να φαίνεται/εκτυπώνεται.
       </div>
 
     </div>
@@ -224,21 +229,51 @@
 </div>
 
 <script>
-  // ✅ Auto-fill start date/time from device if empty
+  // ✅ Auto-fill arrival date/time from device if empty
   (function () {
     const d = document.getElementById("date_in_date");
     const t = document.getElementById("date_in_time");
-
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
 
-    if (d && !d.value) {
-      d.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-    }
-    if (t && !t.value) {
-      t.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    }
+    if (d && !d.value) d.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    if (t && !t.value) t.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   })();
+
+  // ✅ AUTO SELECT FOR PRINT:
+  // Αν γράψεις Notes ή Parts No ή Qty, και το Result είναι OK, το κάνει CHECK αυτόματα.
+  function autoSelectIfFilled(id) {
+    const sel = document.querySelector(`.js-result[data-id="${id}"]`);
+    const parts = document.querySelector(`.js-parts[data-id="${id}"]`);
+    const qty = document.querySelector(`.js-qty[data-id="${id}"]`);
+    const notes = document.querySelector(`.js-notes[data-id="${id}"]`);
+    const ex = document.querySelector(`.js-exclude[data-id="${id}"]`);
+
+    if (!sel || !parts || !qty || !notes) return;
+
+    const filled = (parts.value.trim() !== "") || (parseInt(qty.value || "0") > 0) || (notes.value.trim() !== "");
+    const excluded = ex && ex.checked;
+
+    if (excluded) return;
+    if (filled && sel.value === "OK") sel.value = "CHECK";
+  }
+
+  document.addEventListener("input", function(e){
+    const id = e.target.getAttribute("data-id");
+    if (!id) return;
+    if (e.target.classList.contains("js-parts") || e.target.classList.contains("js-qty") || e.target.classList.contains("js-notes")) {
+      autoSelectIfFilled(id);
+    }
+  });
+
+  document.addEventListener("change", function(e){
+    const id = e.target.getAttribute("data-id");
+    if (!id) return;
+    if (e.target.classList.contains("js-exclude")) {
+      // αν το κάνεις exclude, δεν πειράζουμε status
+      return;
+    }
+  });
 </script>
 
 {% endblock %}
