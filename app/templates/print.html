@@ -1,97 +1,89 @@
 <!doctype html>
-<html lang="el">
+<html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Print {{ visit.job_no or visit.id }}</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title>Print Job {{ visit.job_no or visit.id }}</title>
   <style>
-    @media print { .no-print { display:none !important; } }
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    h2,h3,h4 { margin: 0 0 8px 0; }
+    .row { display:flex; gap: 24px; flex-wrap: wrap; margin-bottom: 8px; }
+    .box { border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
+    table { width:100%; border-collapse: collapse; margin-top: 10px; }
+    th,td { border-bottom: 1px solid #ddd; padding: 6px 8px; font-size: 13px; }
+    th { text-align:left; background:#f6f6f6; }
+    .small { font-size: 12px; color:#444; }
+    .toolbar { margin-bottom: 14px; }
+    .btn { display:inline-block; padding: 8px 12px; border:1px solid #333; border-radius: 6px; text-decoration:none; color:#000; margin-right: 8px;}
+    @media print { .toolbar { display:none; } }
   </style>
 </head>
-<body class="bg-white">
-<div class="container py-3">
+<body>
 
-  <div class="d-flex justify-content-between align-items-center mb-3 no-print">
-    <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}">← Πίσω</a>
-    <button class="btn btn-dark btn-sm" onclick="window.print()">Print</button>
+  <div class="toolbar">
+    <a class="btn" href="#" onclick="window.print(); return false;">Print</a>
+    <a class="btn" href="/visits/{{ visit.id }}?mode=selected">Back</a>
   </div>
 
-  <h5>O&S STEPHANOU LTD</h5>
-  <div class="mb-3 text-muted" style="font-size: 13px;">
-    Michael Paridi 3, Palouriotissa • Tel: 22436990-22436992 • Fax: 22437001 • Email: osstephanou@gmail.com
-  </div>
-
-  <h6 class="mb-2">JOB CARD: {{ visit.job_no or visit.id }}</h6>
-
-  <div class="row g-2 mb-3" style="font-size:14px;">
-    <div class="col-md-3"><strong>Αρ. Εγγραφής:</strong> {{ visit.plate_number or '' }}</div>
-    <div class="col-md-3"><strong>Αρ. Πλαισίου:</strong> {{ visit.vin or '' }}</div>
-    <div class="col-md-3"><strong>Μοντέλο:</strong> {{ visit.model or '' }}</div>
-    <div class="col-md-3"><strong>KM/H:</strong> {{ visit.km or '' }}</div>
-    <div class="col-md-4"><strong>Όνομα:</strong> {{ visit.customer_name or '' }}</div>
-    <div class="col-md-4"><strong>Τηλ:</strong> {{ visit.phone or '' }}</div>
-    <div class="col-md-4"><strong>Email:</strong> {{ visit.email or '' }}</div>
-  </div>
-
-  <div class="row g-2 mb-3" style="font-size:14px;">
-    <div class="col-md-6"><strong>Άφιξη:</strong> {{ visit.date_in or '' }}</div>
-    <div class="col-md-6"><strong>Παράδοση:</strong> {{ visit.date_out or '' }}</div>
-  </div>
-
-  {% if visit.customer_complaint %}
-  <div class="mb-3">
-    <strong>Παράπονο / Σχόλια πελάτη:</strong><br>
-    <div>{{ visit.customer_complaint }}</div>
-  </div>
-  {% endif %}
+  <h2>O&S STEPHANOU LTD</h2>
+  <div class="small">Michael Paridi 3, Palouriotissa • Tel: 22436990-22436992 • Fax: 22437001 • Email: osstephanou@gmail.com</div>
 
   <hr>
 
-  <h6>Προβλήματα (CHECK/REPAIR)</h6>
+  <h3>JOB: {{ visit.job_no or visit.id }}</h3>
 
-  {% if lines|length == 0 %}
-    <div class="text-muted">Δεν υπάρχουν επιλεγμένα προβλήματα για εκτύπωση.</div>
+  <div class="row">
+    <div class="box">
+      <div><strong>Αρ. Εγγραφής:</strong> {{ visit.plate_number or '' }}</div>
+      <div><strong>VIN:</strong> {{ visit.vin or '' }}</div>
+      <div><strong>Μοντέλο:</strong> {{ visit.model or '' }}</div>
+      <div><strong>KM:</strong> {{ visit.km or '' }}</div>
+    </div>
+
+    <div class="box">
+      <div><strong>Όνομα:</strong> {{ visit.customer_name or '' }}</div>
+      <div><strong>Τηλέφωνο:</strong> {{ visit.phone or '' }}</div>
+      <div><strong>Email:</strong> {{ visit.email or '' }}</div>
+    </div>
+
+    <div class="box">
+      <div><strong>Άφιξη:</strong> {{ (visit.date_in|string)[:16] if visit.date_in else '' }}</div>
+      <div><strong>Παράδοση:</strong> {{ (visit.date_out|string)[:16] if visit.date_out else '' }}</div>
+    </div>
+  </div>
+
+  {% if visit.customer_complaint %}
+    <div class="box">
+      <strong>Παράπονο / Σχόλια:</strong>
+      <div>{{ visit.customer_complaint }}</div>
+    </div>
   {% endif %}
 
-  {% set current_cat = None %}
-  {% for ln in lines %}
-    {% if ln.category != current_cat %}
-      {% set current_cat = ln.category %}
-      <h6 class="mt-3">{{ current_cat }}</h6>
-      <div class="table-responsive">
-        <table class="table table-sm align-middle">
-          <thead>
-            <tr>
-              <th>Έλεγχος</th>
-              <th style="width:120px;">Κατάσταση</th>
-              <th style="width:220px;">Parts Number</th>
-              <th style="width:110px;">Ποσότητα</th>
-            </tr>
-          </thead>
-          <tbody>
-    {% endif %}
+  <h4 style="margin-top:16px;">Επιλεγμένες εργασίες (CHECK/REPAIR/PARTS)</h4>
 
-    <tr>
-      <td>
-        <strong>{{ ln.item_name }}</strong>
-        {% if ln.notes %}
-          <div class="text-muted" style="font-size: 13px;">{{ ln.notes }}</div>
-        {% endif %}
-      </td>
-      <td>{{ ln.result }}</td>
-      <td>{{ ln.parts_code or '' }}</td>
-      <td>{{ ln.parts_qty or 0 }}</td>
-    </tr>
+  <table>
+    <thead>
+      <tr>
+        <th>Κατηγορία</th>
+        <th>Εργασία</th>
+        <th>Status</th>
+        <th>Parts No</th>
+        <th>Qty</th>
+        <th>Σημείωση</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ln in lines %}
+      <tr>
+        <td>{{ ln.category }}</td>
+        <td>{{ ln.item_name }}</td>
+        <td>{{ ln.result }}</td>
+        <td>{{ ln.parts_code or '' }}</td>
+        <td>{{ ln.parts_qty or 0 }}</td>
+        <td>{{ ln.notes or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 
-    {% set next_cat = lines[loop.index].category if not loop.last else None %}
-    {% if next_cat != current_cat %}
-          </tbody>
-        </table>
-      </div>
-    {% endif %}
-  {% endfor %}
-
-</div>
 </body>
 </html>
