@@ -4,11 +4,24 @@
 <div class="container py-4">
 
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="m-0">JOB CARD: {{ visit.job_no or visit.id }}</h4>
+    <div>
+      <h4 class="m-0">JOB CARD: {{ visit.job_no or visit.id }}</h4>
+      <div class="text-muted" style="font-size:13px;">
+        Προβολή:
+        {% if mode == "all" %}
+          <strong>Όλα</strong> |
+          <a href="/visits/{{ visit.id }}?mode=selected">Μόνο επιλεγμένα</a>
+        {% else %}
+          <strong>Μόνο επιλεγμένα</strong> |
+          <a href="/visits/{{ visit.id }}?mode=all">Δείξε όλα</a>
+        {% endif %}
+      </div>
+    </div>
 
     <div class="d-flex gap-2 flex-wrap">
       <a class="btn btn-outline-success btn-sm" href="/backup" target="_blank" rel="noopener">Backup</a>
-      <a class="btn btn-outline-secondary btn-sm" href="/history">Ιστορικό</a>
+      <a class="btn btn-outline-primary btn-sm" href="/visits/{{ visit.id }}/pdf" target="_blank" rel="noopener">PDF</a>
+      <a class="btn btn-outline-dark btn-sm" href="/visits/{{ visit.id }}/print" target="_blank" rel="noopener">Print</a>
       <a class="btn btn-outline-danger btn-sm" href="/">Πίσω</a>
     </div>
   </div>
@@ -96,6 +109,12 @@
       <hr>
 
       <!-- Checklist -->
+      {% if lines|length == 0 %}
+        <div class="alert alert-warning">
+          Δεν υπάρχουν επιλεγμένες γραμμές ακόμη. Πάτα “Δείξε όλα” για να δεις όλη τη λίστα.
+        </div>
+      {% endif %}
+
       {% set current_cat = None %}
       {% for ln in lines %}
         {% if ln.category != current_cat %}
@@ -164,49 +183,48 @@
         {% endif %}
       {% endfor %}
 
+      <!-- Buttons -->
       <div class="d-flex gap-2 mt-3 flex-wrap">
         <button class="btn btn-success" type="submit" name="after_save" value="stay">Save (Όλα)</button>
         <button class="btn btn-outline-dark" type="submit" name="after_save" value="print">Save + Print</button>
         <button class="btn btn-outline-primary" type="submit" name="after_save" value="pdf">Save + PDF</button>
       </div>
 
-    </div>
-  </form>
+      <hr>
 
-  <div class="card shadow-sm mt-3">
-    <div class="card-body">
+      <!-- ✅ Add new line WITHOUT losing anything (uses same form) -->
       <h6 class="mb-2">+ Πρόσθεσε νέο πρόβλημα / έλεγχο</h6>
-
-      <form method="post" action="/visits/{{ visit.id }}/lines/new" class="row g-2">
+      <div class="row g-2">
         <div class="col-md-4">
-          <input class="form-control form-control-sm" name="category"
-                 placeholder="Κατηγορία" value="{{ current_cat or 'ΒΑΣΙΚΑ ΣΤΟΙΧΕΙΑ ΟΧΗΜΑΤΟΣ' }}" required>
+          <input class="form-control form-control-sm" name="new_category"
+                 placeholder="Κατηγορία" value="{{ 'ΒΑΣΙΚΑ ΣΤΟΙΧΕΙΑ ΟΧΗΜΑΤΟΣ' }}" required>
         </div>
         <div class="col-md-6">
-          <input class="form-control form-control-sm" name="item_name"
+          <input class="form-control form-control-sm" name="new_item_name"
                  placeholder="Περιγραφή (π.χ. Φρένα)" required>
         </div>
         <div class="col-md-1 d-flex align-items-center">
           <div class="form-check">
-            <input class="form-check-input" type="checkbox" name="add_to_master" value="1" id="addmaster">
-            <label class="form-check-label" for="addmaster">Μνήμη</label>
+            <input class="form-check-input" type="checkbox" name="new_add_to_master" value="1" id="newmaster">
+            <label class="form-check-label" for="newmaster">Μνήμη</label>
           </div>
         </div>
         <div class="col-md-1">
-          <button class="btn btn-success btn-sm w-100" type="submit">+</button>
+          <button class="btn btn-success btn-sm w-100" type="submit" name="action" value="add_line">+</button>
         </div>
-      </form>
+      </div>
 
       <div class="text-muted mt-2" style="font-size:13px;">
-        ✔ Αν τσεκάρεις “Μνήμη”, το item θα εμφανίζεται αυτόματα σε όλες τις νέες επισκέψεις.
+        ✔ Δεν θα χαθεί τίποτα: πρώτα κάνει Save, μετά προσθέτει.
       </div>
+
     </div>
-  </div>
+  </form>
 
 </div>
 
 <script>
-  // ✅ If date/time in is empty, auto-fill with PC/mobile current time
+  // ✅ Auto-fill start date/time from device if empty
   (function () {
     const d = document.getElementById("date_in_date");
     const t = document.getElementById("date_in_time");
