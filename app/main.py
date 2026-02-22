@@ -4,7 +4,7 @@ import traceback
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, Request, Depends, Form, Response
+from fastapi import FastAPI, Request, Depends, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 
@@ -62,22 +62,19 @@ async def all_exception_handler(request: Request, exc: Exception):
 def startup():
     Base.metadata.create_all(bind=engine)
 
-    # ✅ Safe migration: ensure exclude_from_print exists (SQLite only)
+    # ✅ safe add column exclude_from_print if missing (SQLite only)
     try:
         with engine.connect() as conn:
-            try:
-                cols = conn.execute(text("PRAGMA table_info(visit_checklist_lines)")).fetchall()
-                colnames = {c[1] for c in cols}
-                if "exclude_from_print" not in colnames:
-                    conn.execute(
-                        text(
-                            "ALTER TABLE visit_checklist_lines "
-                            "ADD COLUMN exclude_from_print BOOLEAN NOT NULL DEFAULT 0"
-                        )
+            cols = conn.execute(text("PRAGMA table_info(visit_checklist_lines)")).fetchall()
+            colnames = {c[1] for c in cols}
+            if "exclude_from_print" not in colnames:
+                conn.execute(
+                    text(
+                        "ALTER TABLE visit_checklist_lines "
+                        "ADD COLUMN exclude_from_print BOOLEAN NOT NULL DEFAULT 0"
                     )
-                    conn.commit()
-            except Exception:
-                pass
+                )
+                conn.commit()
     except Exception:
         pass
 
@@ -134,11 +131,6 @@ def _sqlite_db_file_path() -> Optional[str]:
 
 @app.get("/backup")
 def backup(db: Session = Depends(get_db)):
-    """
-    ✅ Backup:
-    - SQLite: download .db (full backup)
-    - Otherwise: JSON export
-    """
     sqlite_path = _sqlite_db_file_path()
     now = datetime.now().strftime("%Y-%m-%d_%H%M")
 
@@ -152,12 +144,12 @@ def backup(db: Session = Depends(get_db)):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    # fallback JSON export
     visits = db.query(Visit).order_by(Visit.id.asc()).all()
     lines = db.query(VisitChecklistLine).order_by(VisitChecklistLine.id.asc()).all()
     items = db.query(ChecklistItem).order_by(ChecklistItem.id.asc()).all()
 
-    def dt(v):
-        return v.isoformat() if v else None
+    def dt(v): return v.isoformat() if v else None
 
     payload = {
         "exported_at": datetime.now().isoformat(),
@@ -205,11 +197,35 @@ def backup(db: Session = Depends(get_db)):
     )
 
 
+# ✅ SEARCH ENDPOINT (fix Not Found)
+@app.get("/search", response_class=HTMLResponse)
+def search(request: Request, q: str = "", db: Session = Depends(get_db)):
+    return index(request=request, q=q, db=db)
+
+
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, db: Session = Depends(get_db)):
+def index(request: Request, q: str = "", db: Session = Depends(get_db)):
     seed_master_if_empty(db)
-    visits = db.query(Visit).order_by(Visit.id.desc()).limit(200).all()
-    return templates.TemplateResponse("index.html", {"request": request, "visits": visits})
+
+    query = db.query(Visit)
+
+    q_clean = (q or "").strip()
+    if q_clean:
+        like = f"%{q_clean}%"
+        query = query.filter(
+            or_(
+                Visit.customer_name.ilike(like),
+                Visit.plate_number.ilike(like),
+                Visit.phone.ilike(like),
+                Visit.email.ilike(like),
+                Visit.model.ilike(like),
+                Visit.vin.ilike(like),
+                Visit.job_no.ilike(like),
+            )
+        )
+
+    visits = query.order_by(Visit.id.desc()).limit(200).all()
+    return templates.TemplateResponse("index.html", {"request": request, "visits": visits, "q": q_clean})
 
 
 @app.post("/visits/new")
@@ -218,7 +234,7 @@ def create_visit(request: Request, db: Session = Depends(get_db)):
 
     v = Visit(
         job_no=f"JOB-{(db.query(Visit).count() + 1)}",
-        date_in=datetime.now(),  # ✅ auto now
+        date_in=datetime.now(),
         date_out=None,
         customer_name="",
         phone="",
@@ -249,7 +265,6 @@ def create_visit(request: Request, db: Session = Depends(get_db)):
         )
     db.commit()
 
-    # ✅ default to selected view
     return RedirectResponse(f"/visits/{v.id}?mode=selected", status_code=302)
 
 
@@ -273,30 +288,25 @@ def visit_page(visit_id: int, request: Request, mode: str = "selected", db: Sess
         lines = [ln for ln in all_lines if is_selected_line(ln)]
         mode = "selected"
 
-    return templates.TemplateResponse(
-        "visit.html",
-        {"request": request, "visit": visit, "lines": lines, "mode": mode},
-    )
+    return templates.TemplateResponse("visit.html", {"request": request, "visit": visit, "lines": lines, "mode": mode})
 
 
 @app.post("/visits/{visit_id}/save_all")
 async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    """
-    ✅ Saves everything.
-    ✅ If action == add_line: adds new line AFTER saving (so nothing is lost).
-    ✅ after_save: stay | print | pdf
-    """
     form = await request.form()
+
+    mode = (form.get("mode") or "selected").strip().lower()
+    if mode not in ("selected", "all"):
+        mode = "selected"
 
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    # dates
+    # visit fields
     visit.date_in = combine_dt(form.get("date_in_date"), form.get("date_in_time"))
     visit.date_out = combine_dt(form.get("date_out_date"), form.get("date_out_time"))
 
-    # visit fields
     visit.plate_number = (form.get("plate_number") or "").strip()
     visit.vin = (form.get("vin") or "").strip()
     visit.model = (form.get("model") or "").strip()
@@ -322,19 +332,21 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
         ex = (form.get(f"exclude_{ln.id}") or "0").strip()
         ln.exclude_from_print = (ex == "1")
 
-    # ✅ optional add new line AFTER saving (so no lost selections)
+    # ✅ add new line AFTER saving (so nothing is lost)
     action = (form.get("action") or "").strip().lower()
     if action == "add_line":
         cat = (form.get("new_category") or "").strip()
         name = (form.get("new_item_name") or "").strip()
         add_master = (form.get("new_add_to_master") or "0").strip() == "1"
+
         if cat and name:
+            # ✅ IMPORTANT: set result CHECK so it appears & prints automatically
             db.add(
                 VisitChecklistLine(
                     visit_id=visit_id,
                     category=cat,
                     item_name=name,
-                    result="OK",
+                    result="CHECK",
                     notes="",
                     parts_code="",
                     parts_qty=0,
@@ -352,8 +364,11 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     if after == "pdf":
         return RedirectResponse(f"/visits/{visit_id}/pdf", status_code=302)
 
-    # ✅ after saving go to selected view (as you want)
-    return RedirectResponse(f"/visits/{visit_id}?mode=selected", status_code=302)
+    # ✅ return same mode + go to add section only if we added
+    if action == "add_line":
+        return RedirectResponse(f"/visits/{visit_id}?mode={mode}#addnew", status_code=302)
+
+    return RedirectResponse(f"/visits/{visit_id}?mode={mode}", status_code=302)
 
 
 @app.get("/visits/{visit_id}/print", response_class=HTMLResponse)
@@ -375,7 +390,6 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
     lines = printable_lines(db, visit_id)
 
     company = {
-        # ✅ IMPORTANT: use plain text, no '&' parsing issues
         "name": "O&S STEPHANOU LTD",
         "lines": [
             "Michael Paridi 3, Palouriotissa",
