@@ -7,36 +7,26 @@
     <h4 class="m-0">JOB CARD: {{ visit.job_no or visit.id }}</h4>
 
     <div class="d-flex gap-2 flex-wrap">
-      <a class="btn btn-outline-dark btn-sm"
-         href="/visits/{{ visit.id }}/print"
-         target="_blank" rel="noopener">Print</a>
-
-      <a class="btn btn-outline-primary btn-sm"
-         href="/visits/{{ visit.id }}/pdf"
-         target="_blank" rel="noopener">PDF</a>
-
-      <a class="btn btn-outline-secondary btn-sm"
-         href="/history">Ιστορικό</a>
-
-      <a class="btn btn-outline-danger btn-sm"
-         href="/">Πίσω</a>
+      <a class="btn btn-outline-success btn-sm" href="/backup" target="_blank" rel="noopener">Backup</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/history">Ιστορικό</a>
+      <a class="btn btn-outline-danger btn-sm" href="/">Πίσω</a>
     </div>
   </div>
 
-  <form method="post" action="/visits/{{ visit.id }}/save_all" class="card shadow-sm">
+  <form id="jobform" method="post" action="/visits/{{ visit.id }}/save_all" class="card shadow-sm">
     <div class="card-body">
 
-      <!-- ✅ Dates / Times -->
+      <!-- Dates / Times -->
       <div class="row g-3 mb-3">
         <div class="col-md-3">
           <label class="form-label">Ημ/νία Άφιξης</label>
-          <input type="date" class="form-control form-control-sm"
+          <input id="date_in_date" type="date" class="form-control form-control-sm"
                  name="date_in_date"
                  value="{{ (visit.date_in|string)[:10] if visit.date_in else '' }}">
         </div>
         <div class="col-md-3">
           <label class="form-label">Ώρα Άφιξης</label>
-          <input type="time" class="form-control form-control-sm"
+          <input id="date_in_time" type="time" class="form-control form-control-sm"
                  name="date_in_time"
                  value="{{ (visit.date_in|string)[11:16] if visit.date_in else '' }}">
         </div>
@@ -54,7 +44,7 @@
         </div>
       </div>
 
-      <!-- ✅ Vehicle -->
+      <!-- Vehicle -->
       <div class="row g-3 mb-3">
         <div class="col-md-3">
           <label class="form-label">Αρ. Εγγραφής</label>
@@ -78,7 +68,7 @@
         </div>
       </div>
 
-      <!-- ✅ Customer -->
+      <!-- Customer -->
       <div class="row g-3 mb-3">
         <div class="col-md-4">
           <label class="form-label">Όνομα</label>
@@ -105,7 +95,7 @@
 
       <hr>
 
-      <!-- ✅ Checklist grouped by category -->
+      <!-- Checklist -->
       {% set current_cat = None %}
       {% for ln in lines %}
         {% if ln.category != current_cat %}
@@ -153,7 +143,6 @@
                    name="notes_{{ ln.id }}" value="{{ ln.notes or '' }}">
           </td>
 
-          <!-- ✅ Permanent exclusion from Print/PDF -->
           <td>
             <input type="hidden" name="exclude_{{ ln.id }}" value="0">
             <div class="form-check">
@@ -175,17 +164,15 @@
         {% endif %}
       {% endfor %}
 
-      <!-- ✅ Only SAVE at the end -->
-      <div class="d-flex gap-2 mt-3">
-        <button class="btn btn-success" type="submit">Save (Όλα)</button>
-        <a class="btn btn-outline-dark" href="/visits/{{ visit.id }}/print" target="_blank" rel="noopener">Print</a>
-        <a class="btn btn-outline-primary" href="/visits/{{ visit.id }}/pdf" target="_blank" rel="noopener">PDF</a>
+      <div class="d-flex gap-2 mt-3 flex-wrap">
+        <button class="btn btn-success" type="submit" name="after_save" value="stay">Save (Όλα)</button>
+        <button class="btn btn-outline-dark" type="submit" name="after_save" value="print">Save + Print</button>
+        <button class="btn btn-outline-primary" type="submit" name="after_save" value="pdf">Save + PDF</button>
       </div>
 
     </div>
   </form>
 
-  <!-- ✅ Extra categories / Add new line + Memory -->
   <div class="card shadow-sm mt-3">
     <div class="card-body">
       <h6 class="mb-2">+ Πρόσθεσε νέο πρόβλημα / έλεγχο</h6>
@@ -217,5 +204,23 @@
   </div>
 
 </div>
+
+<script>
+  // ✅ If date/time in is empty, auto-fill with PC/mobile current time
+  (function () {
+    const d = document.getElementById("date_in_date");
+    const t = document.getElementById("date_in_time");
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+
+    if (d && !d.value) {
+      d.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    }
+    if (t && !t.value) {
+      t.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    }
+  })();
+</script>
 
 {% endblock %}
