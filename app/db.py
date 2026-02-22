@@ -2,23 +2,25 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-def _db_url() -> str:
-    url = os.getenv("DATABASE_URL", "").strip()
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-    if not url:
-        url = "sqlite:///./stefanos_garage.db"
-    return url
+# Σε Render, κράτα sqlite σε disk (persistent) αν έχεις disk
+# Αν δεν έχεις disk, θα είναι προσωρινό αλλά θα δουλεύει.
+DB_URL = os.getenv("DATABASE_URL", "").strip()
 
-DATABASE_URL = _db_url()
-
-connect_args = {}
-if DATABASE_URL.startswith("sqlite"):
+if DB_URL:
+    # Render sometimes gives postgres URLs starting with postgres://
+    if DB_URL.startswith("postgres://"):
+        DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+    connect_args = {}
+else:
+    # local sqlite file
+    DB_URL = "sqlite:///./stefanos.db"
     connect_args = {"check_same_thread": False}
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
+engine = create_engine(DB_URL, connect_args=connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 Base = declarative_base()
+
 
 def get_db():
     db = SessionLocal()
@@ -26,20 +28,3 @@ def get_db():
         yield db
     finally:
         db.close()
-from sqlalchemy import text
-
-def ensure_schema(engine):
-    with engine.connect() as conn:
-        try:
-            conn.execute(text("ALTER TABLE visit_checklist_lines ADD COLUMN parts_code VARCHAR"))
-        except Exception:
-            pass
-
-        try:
-            conn.execute(text("ALTER TABLE visit_checklist_lines ADD COLUMN parts_qty INTEGER DEFAULT 0"))
-        except Exception:
-            pass
-
-        conn.commit()
-
-ensure_schema(engine)
