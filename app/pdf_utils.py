@@ -1,34 +1,21 @@
 import os
+import io
 from datetime import datetime
-from typing import Dict, List, Any
 
+from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
-from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle,
-)
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.enums import TA_LEFT
-from reportlab.lib.styles import ParagraphStyle
 
-
-def _try_register_unicode_font() -> str:
+def _try_register_font():
     """
-    Fix for Render: don't rely on app/assets/arial.ttf.
-    Try common Linux font paths (DejaVu Sans). If not found, fall back to Helvetica.
+    ✅ Fix Greek + symbols reliably on Render/Linux
+    Tries DejaVuSans; falls back to Helvetica if not found.
     """
     candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf",
     ]
     for p in candidates:
         if os.path.exists(p):
@@ -40,141 +27,140 @@ def _try_register_unicode_font() -> str:
     return "Helvetica"
 
 
-def build_jobcard_pdf(company: Dict[str, Any], visit: Dict[str, Any], lines: List[Dict[str, Any]]) -> bytes:
-    font_name = _try_register_unicode_font()
+FONT = _try_register_font()
 
-    # Styles
-    styles = getSampleStyleSheet()
-    base = ParagraphStyle(
-        "base",
-        parent=styles["Normal"],
-        fontName=font_name,
-        fontSize=10,
-        leading=12,
-        alignment=TA_LEFT,
-    )
-    h1 = ParagraphStyle(
-        "h1",
-        parent=base,
-        fontSize=14,
-        leading=16,
-        spaceAfter=6,
-    )
-    h2 = ParagraphStyle(
-        "h2",
-        parent=base,
-        fontSize=11,
-        leading=13,
-        spaceBefore=6,
-        spaceAfter=4,
-    )
-    small = ParagraphStyle(
-        "small",
-        parent=base,
-        fontSize=9,
-        leading=11,
-    )
 
-    # Build PDF in memory
-    from io import BytesIO
-    buf = BytesIO()
+def _fmt_dt(dt):
+    if not dt:
+        return ""
+    if isinstance(dt, str):
+        return dt
+    try:
+        return dt.strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return str(dt)
 
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=14 * mm,
-        rightMargin=14 * mm,
-        topMargin=12 * mm,
-        bottomMargin=12 * mm,
-        title="Job Card",
-    )
 
-    story = []
+def build_jobcard_pdf(company: dict, visit: dict, lines: list[dict]) -> bytes:
+    """
+    ✅ NO Paragraph/HTML parsing (so O&S never becomes O;S)
+    ✅ Includes dates/times
+    ✅ Includes only selected lines (caller already filters)
+    """
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
 
-    # Header company
-    story.append(Paragraph(company.get("name", "Garage"), h1))
-    comp_lines = company.get("lines") or []
-    for ln in comp_lines:
-        story.append(Paragraph(str(ln), small))
-    story.append(Spacer(1, 6))
+    c.setTitle("Job Card")
 
-    # Visit info
-    job_no = visit.get("job_no", "")
-    story.append(Paragraph(f"JOB CARD: {job_no}", h2))
+    # margins
+    x = 40
+    y = h - 50
 
-    def fmt_dt(x):
-        if not x:
-            return ""
-        # if it's datetime already
-        if isinstance(x, datetime):
-            return x.strftime("%Y-%m-%d %H:%M")
-        return str(x)
+    c.setFont(FONT, 14)
+    c.drawString(x, y, company.get("name", ""))
+    y -= 18
 
-    info_rows = [
-        ["Αρ. Εγγραφής", visit.get("plate_number", ""), "Αρ. Πλαισίου", visit.get("vin", "")],
-        ["Μοντέλο", visit.get("model", ""), "KM/H", visit.get("km", "")],
-        ["Όνομα", visit.get("customer_name", ""), "Τηλέφωνο", visit.get("phone", "")],
-        ["Email", visit.get("email", ""), " ", " "],
-        ["Άφιξη", fmt_dt(visit.get("date_in", "")), "Παράδοση", fmt_dt(visit.get("date_out", ""))],
-    ]
+    c.setFont(FONT, 9)
+    for ln in company.get("lines", []):
+        c.drawString(x, y, ln)
+        y -= 12
 
-    t_info = Table(info_rows, colWidths=[28 * mm, 62 * mm, 28 * mm, 62 * mm])
-    t_info.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
-        ("BACKGROUND", (2, 0), (2, -1), colors.whitesmoke),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-    ]))
-    story.append(t_info)
+    y -= 10
+    c.setLineWidth(0.8)
+    c.line(x, y, w - x, y)
+    y -= 20
+
+    c.setFont(FONT, 12)
+    c.drawString(x, y, f"JOB: {visit.get('job_no', '')}")
+    y -= 18
+
+    c.setFont(FONT, 10)
+    c.drawString(x, y, f"Αρ. Εγγραφής: {visit.get('plate_number','')}")
+    c.drawString(x + 260, y, f"VIN: {visit.get('vin','')}")
+    y -= 14
+    c.drawString(x, y, f"Μοντέλο: {visit.get('model','')}")
+    c.drawString(x + 260, y, f"KM: {visit.get('km','')}")
+    y -= 14
+    c.drawString(x, y, f"Όνομα: {visit.get('customer_name','')}")
+    y -= 14
+    c.drawString(x, y, f"Τηλέφωνο: {visit.get('phone','')}")
+    c.drawString(x + 260, y, f"Email: {visit.get('email','')}")
+    y -= 14
+
+    # ✅ Dates/times
+    c.drawString(x, y, f"Ημ/νία & Ώρα Άφιξης: {_fmt_dt(visit.get('date_in'))}")
+    y -= 14
+    c.drawString(x, y, f"Ημ/νία & Ώρα Παράδοσης: {_fmt_dt(visit.get('date_out'))}")
+    y -= 18
 
     complaint = (visit.get("customer_complaint") or "").strip()
     if complaint:
-        story.append(Spacer(1, 6))
-        story.append(Paragraph("Παράπονο / Σχόλια πελάτη:", h2))
-        story.append(Paragraph(complaint.replace("\n", "<br/>"), base))
+        c.setFont(FONT, 10)
+        c.drawString(x, y, "Παράπονο / Σχόλια πελάτη:")
+        y -= 14
+        c.setFont(FONT, 9)
+        # wrap basic
+        max_chars = 95
+        for i in range(0, len(complaint), max_chars):
+            c.drawString(x, y, complaint[i : i + max_chars])
+            y -= 12
+        y -= 8
 
-    story.append(Spacer(1, 8))
-    story.append(Paragraph("Checklist", h2))
+    c.setFont(FONT, 11)
+    c.drawString(x, y, "ΕΠΙΛΕΓΜΕΝΕΣ ΕΡΓΑΣΙΕΣ (CHECK / REPAIR / PARTS)")
+    y -= 10
+    c.line(x, y, w - x, y)
+    y -= 16
 
-    # Group lines by category
-    grouped = {}
+    # table header
+    c.setFont(FONT, 9)
+    c.drawString(x, y, "Κατηγορία / Εργασία")
+    c.drawString(x + 305, y, "Status")
+    c.drawString(x + 365, y, "Parts No")
+    c.drawString(x + 470, y, "Qty")
+    y -= 12
+    c.line(x, y, w - x, y)
+    y -= 14
+
+    c.setFont(FONT, 9)
+
+    last_cat = None
     for ln in lines:
-        cat = (ln.get("category") or "").strip() or "Χωρίς Κατηγορία"
-        grouped.setdefault(cat, []).append(ln)
+        cat = (ln.get("category") or "").strip()
+        item = (ln.get("item_name") or "").strip()
+        status = (ln.get("result") or "").strip()
+        parts_code = (ln.get("parts_code") or "").strip()
+        qty = str(ln.get("parts_qty") or 0)
 
-    # Table per category
-    for cat, items in grouped.items():
-        story.append(Paragraph(cat, h2))
+        if y < 70:
+            c.showPage()
+            c.setFont(FONT, 9)
+            y = h - 60
 
-        table_data = [["Έλεγχος", "Κατάσταση", "Parts Number", "Ποσότητα"]]
-        for it in items:
-            table_data.append([
-                it.get("item_name", ""),
-                it.get("result", ""),
-                it.get("parts_code", ""),
-                str(it.get("parts_qty", "") if it.get("parts_qty", "") is not None else ""),
-            ])
+        if cat and cat != last_cat:
+            c.setFont(FONT, 10)
+            c.drawString(x, y, cat)
+            y -= 12
+            c.setFont(FONT, 9)
+            last_cat = cat
 
-        t = Table(table_data, colWidths=[78 * mm, 24 * mm, 52 * mm, 22 * mm])
-        t.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), font_name),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ]))
-        story.append(t)
-        story.append(Spacer(1, 6))
+        text = f"• {item}"
+        c.drawString(x, y, text[:48])
+        c.drawString(x + 305, y, status)
+        c.drawString(x + 365, y, parts_code[:18])
+        c.drawString(x + 470, y, qty)
+        y -= 12
 
-    doc.build(story)
+        notes = (ln.get("notes") or "").strip()
+        if notes:
+            c.setFont(FONT, 8)
+            c.drawString(x + 18, y, f"Σημείωση: {notes[:90]}")
+            c.setFont(FONT, 9)
+            y -= 12
+
+    c.setFont(FONT, 8)
+    c.drawString(x, 40, f"Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
+    c.save()
     return buf.getvalue()
