@@ -1,4 +1,5 @@
 import os
+import traceback
 from typing import Optional
 
 from fastapi import FastAPI, Request, Depends, Form, Response
@@ -12,8 +13,20 @@ from .db import get_db
 from .models import ChecklistItem, Visit, VisitChecklistLine
 from .pdf_utils import build_jobcard_pdf
 
+
 app = FastAPI()
-templates = Jinja2Templates(directory="app/templates")
+
+# ✅ Robust templates path (works on Render)
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+
+# ✅ Global debug error handler: shows the real error on screen
+@app.exception_handler(Exception)
+async def all_exception_handler(request: Request, exc: Exception):
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    msg = f"ERROR: {type(exc).__name__}: {exc}\n\nTRACEBACK:\n{tb}"
+    return PlainTextResponse(msg, status_code=500)
 
 
 # -----------------------------
@@ -27,7 +40,6 @@ def index(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/visits/new")
 def create_visit(request: Request, db: Session = Depends(get_db)):
-    # create visit
     v = Visit(
         job_no=f"JOB-{(db.query(Visit).count() + 1)}",
         customer_name="",
@@ -190,16 +202,13 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
             "parts_qty": int(getattr(ln, "parts_qty", 0) or 0),
         })
 
-    try:
-        pdf_bytes = build_jobcard_pdf(company, visit_d, lines_d)
-        filename = f'job_{visit_d["job_no"]}.pdf'
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
-        )
-    except Exception as e:
-        return PlainTextResponse(f"PDF ERROR: {type(e).__name__}: {str(e)}", status_code=500)
+    pdf_bytes = build_jobcard_pdf(company, visit_d, lines_d)
+    filename = f'job_{visit_d["job_no"]}.pdf'
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 # -----------------------------
