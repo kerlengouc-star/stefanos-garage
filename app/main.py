@@ -1,5 +1,4 @@
 import os
-import io
 import json
 import traceback
 from datetime import datetime
@@ -63,7 +62,7 @@ async def all_exception_handler(request: Request, exc: Exception):
 def startup():
     Base.metadata.create_all(bind=engine)
 
-    # ✅ Safe DB migration (SQLite): add exclude_from_print if missing
+    # ✅ Safe migration: ensure exclude_from_print exists (SQLite only)
     try:
         with engine.connect() as conn:
             try:
@@ -100,48 +99,32 @@ def combine_dt(d: Optional[str], t: Optional[str]):
     return datetime.fromisoformat(f"{d}T{t}:00")
 
 
+def is_selected_line(ln: VisitChecklistLine) -> bool:
+    r = (ln.result or "OK").upper().strip()
+    parts_code = (getattr(ln, "parts_code", "") or "").strip()
+    parts_qty = int(getattr(ln, "parts_qty", 0) or 0)
+    include = (r in ("CHECK", "REPAIR")) or (parts_code != "") or (parts_qty > 0)
+    excluded = bool(getattr(ln, "exclude_from_print", False))
+    return include and not excluded
+
+
 def printable_lines(db: Session, visit_id: int):
-    """
-    ✅ Print/PDF rules:
-    INCLUDE if:
-      - result is CHECK or REPAIR
-      OR parts_code is filled
-      OR parts_qty > 0
-    EXCLUDE if exclude_from_print == True
-    """
     lines = (
         db.query(VisitChecklistLine)
         .filter(VisitChecklistLine.visit_id == visit_id)
         .order_by(VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc())
         .all()
     )
-
-    out = []
-    for ln in lines:
-        r = (ln.result or "OK").upper().strip()
-        parts_code = (getattr(ln, "parts_code", "") or "").strip()
-        parts_qty = int(getattr(ln, "parts_qty", 0) or 0)
-
-        include = (r in ("CHECK", "REPAIR")) or (parts_code != "") or (parts_qty > 0)
-        excluded = bool(getattr(ln, "exclude_from_print", False))
-
-        if include and not excluded:
-            out.append(ln)
-
-    return out
+    return [ln for ln in lines if is_selected_line(ln)]
 
 
 def _sqlite_db_file_path() -> Optional[str]:
-    """
-    Returns absolute path to sqlite file if engine is sqlite and file-based.
-    """
     try:
         if engine.url.get_backend_name() != "sqlite":
             return None
-        dbname = engine.url.database  # can be relative
+        dbname = engine.url.database
         if not dbname or dbname == ":memory:":
             return None
-        # Make absolute
         if os.path.isabs(dbname):
             return dbname
         return os.path.abspath(dbname)
@@ -153,13 +136,12 @@ def _sqlite_db_file_path() -> Optional[str]:
 def backup(db: Session = Depends(get_db)):
     """
     ✅ Backup:
-    - If SQLite: download the .db file (full backup)
-    - Else: JSON export of Visits + Lines + ChecklistItems
+    - SQLite: download .db (full backup)
+    - Otherwise: JSON export
     """
     sqlite_path = _sqlite_db_file_path()
     now = datetime.now().strftime("%Y-%m-%d_%H%M")
 
-    # --- SQLite full file backup
     if sqlite_path and os.path.exists(sqlite_path):
         with open(sqlite_path, "rb") as f:
             data = f.read()
@@ -170,7 +152,6 @@ def backup(db: Session = Depends(get_db)):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # --- JSON export (fallback)
     visits = db.query(Visit).order_by(Visit.id.asc()).all()
     lines = db.query(VisitChecklistLine).order_by(VisitChecklistLine.id.asc()).all()
     items = db.query(ChecklistItem).order_by(ChecklistItem.id.asc()).all()
@@ -212,9 +193,7 @@ def backup(db: Session = Depends(get_db)):
             }
             for ln in lines
         ],
-        "checklist_items": [
-            {"id": it.id, "category": it.category, "name": it.name} for it in items
-        ],
+        "checklist_items": [{"id": it.id, "category": it.category, "name": it.name} for it in items],
     }
 
     data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
@@ -230,17 +209,16 @@ def backup(db: Session = Depends(get_db)):
 def index(request: Request, db: Session = Depends(get_db)):
     seed_master_if_empty(db)
     visits = db.query(Visit).order_by(Visit.id.desc()).limit(200).all()
-    return templates.TemplateResponse("index.html", {"request": request, "user": None, "visits": visits})
+    return templates.TemplateResponse("index.html", {"request": request, "visits": visits})
 
 
 @app.post("/visits/new")
 def create_visit(request: Request, db: Session = Depends(get_db)):
     seed_master_if_empty(db)
 
-    # ✅ Set date_in automatically to NOW
     v = Visit(
         job_no=f"JOB-{(db.query(Visit).count() + 1)}",
-        date_in=datetime.now(),
+        date_in=datetime.now(),  # ✅ auto now
         date_out=None,
         customer_name="",
         phone="",
@@ -271,30 +249,42 @@ def create_visit(request: Request, db: Session = Depends(get_db)):
         )
     db.commit()
 
-    return RedirectResponse(f"/visits/{v.id}", status_code=302)
+    # ✅ default to selected view
+    return RedirectResponse(f"/visits/{v.id}?mode=selected", status_code=302)
 
 
 @app.get("/visits/{visit_id}", response_class=HTMLResponse)
-def visit_page(visit_id: int, request: Request, db: Session = Depends(get_db)):
+def visit_page(visit_id: int, request: Request, mode: str = "selected", db: Session = Depends(get_db)):
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    lines = (
+    all_lines = (
         db.query(VisitChecklistLine)
         .filter(VisitChecklistLine.visit_id == visit_id)
         .order_by(VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc())
         .all()
     )
 
-    return templates.TemplateResponse("visit.html", {"request": request, "user": None, "visit": visit, "lines": lines})
+    if (mode or "selected").lower() == "all":
+        lines = all_lines
+        mode = "all"
+    else:
+        lines = [ln for ln in all_lines if is_selected_line(ln)]
+        mode = "selected"
+
+    return templates.TemplateResponse(
+        "visit.html",
+        {"request": request, "visit": visit, "lines": lines, "mode": mode},
+    )
 
 
 @app.post("/visits/{visit_id}/save_all")
 async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
     """
-    ✅ Always saves, then redirects depending on button:
-      after_save = stay | print | pdf
+    ✅ Saves everything.
+    ✅ If action == add_line: adds new line AFTER saving (so nothing is lost).
+    ✅ after_save: stay | print | pdf
     """
     form = await request.form()
 
@@ -303,14 +293,8 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
         return RedirectResponse("/", status_code=302)
 
     # dates
-    try:
-        visit.date_in = combine_dt(form.get("date_in_date"), form.get("date_in_time"))
-    except Exception:
-        pass
-    try:
-        visit.date_out = combine_dt(form.get("date_out_date"), form.get("date_out_time"))
-    except Exception:
-        pass
+    visit.date_in = combine_dt(form.get("date_in_date"), form.get("date_in_time"))
+    visit.date_out = combine_dt(form.get("date_out_date"), form.get("date_out_time"))
 
     # visit fields
     visit.plate_number = (form.get("plate_number") or "").strip()
@@ -322,9 +306,9 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     visit.km = (form.get("km") or "").strip()
     visit.customer_complaint = (form.get("customer_complaint") or "").strip()
 
-    # lines
-    lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
-    for ln in lines:
+    # lines save
+    all_lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
+    for ln in all_lines:
         ln.result = (form.get(f"result_{ln.id}") or ln.result or "OK").strip()
         ln.notes = (form.get(f"notes_{ln.id}") or "").strip()
         ln.parts_code = (form.get(f"parts_code_{ln.id}") or "").strip()
@@ -338,6 +322,28 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
         ex = (form.get(f"exclude_{ln.id}") or "0").strip()
         ln.exclude_from_print = (ex == "1")
 
+    # ✅ optional add new line AFTER saving (so no lost selections)
+    action = (form.get("action") or "").strip().lower()
+    if action == "add_line":
+        cat = (form.get("new_category") or "").strip()
+        name = (form.get("new_item_name") or "").strip()
+        add_master = (form.get("new_add_to_master") or "0").strip() == "1"
+        if cat and name:
+            db.add(
+                VisitChecklistLine(
+                    visit_id=visit_id,
+                    category=cat,
+                    item_name=name,
+                    result="OK",
+                    notes="",
+                    parts_code="",
+                    parts_qty=0,
+                    exclude_from_print=False,
+                )
+            )
+            if add_master:
+                db.add(ChecklistItem(category=cat, name=name))
+
     db.commit()
 
     after = (form.get("after_save") or "stay").strip().lower()
@@ -346,42 +352,8 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     if after == "pdf":
         return RedirectResponse(f"/visits/{visit_id}/pdf", status_code=302)
 
-    return RedirectResponse(f"/visits/{visit_id}", status_code=302)
-
-
-@app.post("/visits/{visit_id}/lines/new")
-async def add_line(
-    visit_id: int,
-    request: Request,
-    category: str = Form(...),
-    item_name: str = Form(...),
-    add_to_master: Optional[str] = Form(None),
-    db: Session = Depends(get_db),
-):
-    v = db.query(Visit).filter(Visit.id == visit_id).first()
-    if not v:
-        return RedirectResponse("/", status_code=302)
-
-    cat = (category or "").strip()
-    name = (item_name or "").strip()
-
-    db.add(
-        VisitChecklistLine(
-            visit_id=visit_id,
-            category=cat,
-            item_name=name,
-            result="OK",
-            notes="",
-            parts_code="",
-            parts_qty=0,
-            exclude_from_print=False,
-        )
-    )
-    if add_to_master == "1":
-        db.add(ChecklistItem(category=cat, name=name))
-
-    db.commit()
-    return RedirectResponse(f"/visits/{visit_id}", status_code=302)
+    # ✅ after saving go to selected view (as you want)
+    return RedirectResponse(f"/visits/{visit_id}?mode=selected", status_code=302)
 
 
 @app.get("/visits/{visit_id}/print", response_class=HTMLResponse)
@@ -403,6 +375,7 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
     lines = printable_lines(db, visit_id)
 
     company = {
+        # ✅ IMPORTANT: use plain text, no '&' parsing issues
         "name": "O&S STEPHANOU LTD",
         "lines": [
             "Michael Paridi 3, Palouriotissa",
@@ -433,9 +406,10 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
             {
                 "category": ln.category or "",
                 "item_name": ln.item_name or "",
-                "result": ln.result or "",
-                "parts_code": getattr(ln, "parts_code", "") or "",
+                "result": (ln.result or "").strip(),
+                "parts_code": (getattr(ln, "parts_code", "") or "").strip(),
                 "parts_qty": int(getattr(ln, "parts_qty", 0) or 0),
+                "notes": (ln.notes or "").strip(),
             }
         )
 
@@ -446,81 +420,3 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
-
-
-@app.get("/history", response_class=HTMLResponse)
-def history(request: Request, date_from: str = "", date_to: str = "", db: Session = Depends(get_db)):
-    q = db.query(Visit)
-
-    df = (date_from or "").strip()
-    dt = (date_to or "").strip()
-
-    if df and dt:
-        try:
-            d1 = datetime.fromisoformat(df + "T00:00:00")
-            d2 = datetime.fromisoformat(dt + "T23:59:59")
-            q = q.filter(Visit.date_in >= d1, Visit.date_in <= d2)
-        except Exception:
-            pass
-
-    visits = q.order_by(Visit.id.desc()).limit(200).all()
-    return templates.TemplateResponse("history.html", {"request": request, "date_from": df, "date_to": dt, "visits": visits})
-
-
-@app.get("/search", response_class=HTMLResponse)
-def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
-    q2 = (q or "").strip()
-    results = []
-    if q2:
-        like = f"%{q2}%"
-        results = (
-            db.query(Visit)
-            .filter(
-                or_(
-                    Visit.customer_name.ilike(like),
-                    Visit.phone.ilike(like),
-                    Visit.email.ilike(like),
-                    Visit.plate_number.ilike(like),
-                    Visit.vin.ilike(like),
-                    Visit.model.ilike(like),
-                    Visit.job_no.ilike(like),
-                )
-            )
-            .order_by(Visit.id.desc())
-            .limit(200)
-            .all()
-        )
-    return templates.TemplateResponse("search.html", {"request": request, "user": None, "q": q2, "results": results})
-
-
-@app.get("/checklist", response_class=HTMLResponse)
-def checklist_admin(request: Request, db: Session = Depends(get_db)):
-    seed_master_if_empty(db)
-    items = db.query(ChecklistItem).order_by(ChecklistItem.category, ChecklistItem.name).all()
-    return templates.TemplateResponse("checklist.html", {"request": request, "user": None, "items": items})
-
-
-@app.post("/checklist/add")
-def checklist_add(request: Request, category: str = Form(...), name: str = Form(...), db: Session = Depends(get_db)):
-    db.add(ChecklistItem(category=(category or "").strip(), name=(name or "").strip()))
-    db.commit()
-    return RedirectResponse("/checklist", status_code=302)
-
-
-@app.post("/checklist/{item_id}/update")
-def checklist_update(item_id: int, request: Request, category: str = Form(...), name: str = Form(...), db: Session = Depends(get_db)):
-    it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
-    if it:
-        it.category = (category or "").strip()
-        it.name = (name or "").strip()
-        db.commit()
-    return RedirectResponse("/checklist", status_code=302)
-
-
-@app.post("/checklist/{item_id}/delete")
-def checklist_delete(item_id: int, request: Request, db: Session = Depends(get_db)):
-    it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
-    if it:
-        db.delete(it)
-        db.commit()
-    return RedirectResponse("/checklist", status_code=302)
