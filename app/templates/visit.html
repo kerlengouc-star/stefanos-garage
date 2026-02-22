@@ -4,168 +4,217 @@
 <div class="container py-4">
 
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4>JOB CARD: {{ visit.job_no }}</h4>
+    <h4 class="m-0">JOB CARD: {{ visit.job_no or visit.id }}</h4>
 
-    <div class="d-flex gap-2">
-
+    <div class="d-flex gap-2 flex-wrap">
       <a class="btn btn-outline-dark btn-sm"
          href="/visits/{{ visit.id }}/print"
-         target="_blank">Print</a>
+         target="_blank" rel="noopener">Print</a>
 
       <a class="btn btn-outline-primary btn-sm"
          href="/visits/{{ visit.id }}/pdf"
-         target="_blank">PDF</a>
+         target="_blank" rel="noopener">PDF</a>
 
       <a class="btn btn-outline-secondary btn-sm"
          href="/history">Ιστορικό</a>
 
       <a class="btn btn-outline-danger btn-sm"
          href="/">Πίσω</a>
-
     </div>
   </div>
 
+  <form method="post" action="/visits/{{ visit.id }}/save_all" class="card shadow-sm">
+    <div class="card-body">
 
-  <form method="post" action="/visits/{{ visit.id }}/save_all">
-
-    <div class="card mb-3">
-      <div class="card-body">
-
-        <div class="row g-3">
-
-          <div class="col-md-3">
-            <label class="form-label">Αρ. Εγγραφής</label>
-            <input type="text" class="form-control"
-                   name="plate_number"
-                   value="{{ visit.plate_number or '' }}">
-          </div>
-
-          <div class="col-md-3">
-            <label class="form-label">VIN</label>
-            <input type="text" class="form-control"
-                   name="vin"
-                   value="{{ visit.vin or '' }}">
-          </div>
-
-          <div class="col-md-3">
-            <label class="form-label">Μοντέλο</label>
-            <input type="text" class="form-control"
-                   name="model"
-                   value="{{ visit.model or '' }}">
-          </div>
-
-          <div class="col-md-3">
-            <label class="form-label">KM</label>
-            <input type="text" class="form-control"
-                   name="km"
-                   value="{{ visit.km or '' }}">
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label">Πελάτης</label>
-            <input type="text" class="form-control"
-                   name="customer_name"
-                   value="{{ visit.customer_name or '' }}">
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label">Τηλέφωνο</label>
-            <input type="text" class="form-control"
-                   name="phone"
-                   value="{{ visit.phone or '' }}">
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label">Email</label>
-            <input type="text" class="form-control"
-                   name="email"
-                   value="{{ visit.email or '' }}">
-          </div>
-
+      <!-- ✅ Dates / Times -->
+      <div class="row g-3 mb-3">
+        <div class="col-md-3">
+          <label class="form-label">Ημ/νία Άφιξης</label>
+          <input type="date" class="form-control form-control-sm"
+                 name="date_in_date"
+                 value="{{ (visit.date_in|string)[:10] if visit.date_in else '' }}">
         </div>
+        <div class="col-md-3">
+          <label class="form-label">Ώρα Άφιξης</label>
+          <input type="time" class="form-control form-control-sm"
+                 name="date_in_time"
+                 value="{{ (visit.date_in|string)[11:16] if visit.date_in else '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Ημ/νία Παράδοσης</label>
+          <input type="date" class="form-control form-control-sm"
+                 name="date_out_date"
+                 value="{{ (visit.date_out|string)[:10] if visit.date_out else '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Ώρα Παράδοσης</label>
+          <input type="time" class="form-control form-control-sm"
+                 name="date_out_time"
+                 value="{{ (visit.date_out|string)[11:16] if visit.date_out else '' }}">
+        </div>
+      </div>
 
+      <!-- ✅ Vehicle -->
+      <div class="row g-3 mb-3">
+        <div class="col-md-3">
+          <label class="form-label">Αρ. Εγγραφής</label>
+          <input type="text" class="form-control form-control-sm"
+                 name="plate_number" value="{{ visit.plate_number or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Αρ. Πλαισίου (VIN)</label>
+          <input type="text" class="form-control form-control-sm"
+                 name="vin" value="{{ visit.vin or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Μοντέλο</label>
+          <input type="text" class="form-control form-control-sm"
+                 name="model" value="{{ visit.model or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">KM/H</label>
+          <input type="text" class="form-control form-control-sm"
+                 name="km" value="{{ visit.km or '' }}">
+        </div>
+      </div>
+
+      <!-- ✅ Customer -->
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label">Όνομα</label>
+          <input type="text" class="form-control form-control-sm"
+                 name="customer_name" value="{{ visit.customer_name or '' }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Τηλέφωνο</label>
+          <input type="text" class="form-control form-control-sm"
+                 name="phone" value="{{ visit.phone or '' }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Email</label>
+          <input type="text" class="form-control form-control-sm"
+                 name="email" value="{{ visit.email or '' }}">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Παράπονο / Σχόλια πελάτη</label>
+        <textarea class="form-control form-control-sm"
+                  name="customer_complaint" rows="2">{{ visit.customer_complaint or '' }}</textarea>
+      </div>
+
+      <hr>
+
+      <!-- ✅ Checklist grouped by category -->
+      {% set current_cat = None %}
+      {% for ln in lines %}
+        {% if ln.category != current_cat %}
+          {% set current_cat = ln.category %}
+          <h6 class="mt-3 mb-2">{{ current_cat }}</h6>
+
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th style="min-width:240px;">Έλεγχος</th>
+                  <th style="width:140px;">Κατάσταση</th>
+                  <th style="width:220px;">Parts Number</th>
+                  <th style="width:110px;">Ποσότητα</th>
+                  <th>Σημειώσεις</th>
+                  <th style="width:150px;">Εκτύπωση</th>
+                </tr>
+              </thead>
+              <tbody>
+        {% endif %}
+
+        <tr>
+          <td><strong>{{ ln.item_name }}</strong></td>
+
+          <td>
+            <select name="result_{{ ln.id }}" class="form-select form-select-sm">
+              <option value="OK" {% if (ln.result or 'OK') == 'OK' %}selected{% endif %}>OK</option>
+              <option value="CHECK" {% if (ln.result or '') == 'CHECK' %}selected{% endif %}>CHECK</option>
+              <option value="REPAIR" {% if (ln.result or '') == 'REPAIR' %}selected{% endif %}>REPAIR</option>
+            </select>
+          </td>
+
+          <td>
+            <input type="text" class="form-control form-control-sm"
+                   name="parts_code_{{ ln.id }}" value="{{ ln.parts_code or '' }}">
+          </td>
+
+          <td>
+            <input type="number" class="form-control form-control-sm"
+                   name="parts_qty_{{ ln.id }}" value="{{ ln.parts_qty or 0 }}">
+          </td>
+
+          <td>
+            <input type="text" class="form-control form-control-sm"
+                   name="notes_{{ ln.id }}" value="{{ ln.notes or '' }}">
+          </td>
+
+          <!-- ✅ Permanent exclusion from Print/PDF -->
+          <td>
+            <input type="hidden" name="exclude_{{ ln.id }}" value="0">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox"
+                     name="exclude_{{ ln.id }}" value="1"
+                     {% if ln.exclude_from_print %}checked{% endif %}>
+              <label class="form-check-label" style="font-size:13px;">
+                Μην τυπώνεται
+              </label>
+            </div>
+          </td>
+        </tr>
+
+        {% set next_cat = lines[loop.index].category if not loop.last else None %}
+        {% if next_cat != current_cat %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      {% endfor %}
+
+      <!-- ✅ Only SAVE at the end -->
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-success" type="submit">Save (Όλα)</button>
+        <a class="btn btn-outline-dark" href="/visits/{{ visit.id }}/print" target="_blank" rel="noopener">Print</a>
+        <a class="btn btn-outline-primary" href="/visits/{{ visit.id }}/pdf" target="_blank" rel="noopener">PDF</a>
+      </div>
+
+    </div>
+  </form>
+
+  <!-- ✅ Extra categories / Add new line + Memory -->
+  <div class="card shadow-sm mt-3">
+    <div class="card-body">
+      <h6 class="mb-2">+ Πρόσθεσε νέο πρόβλημα / έλεγχο</h6>
+
+      <form method="post" action="/visits/{{ visit.id }}/lines/new" class="row g-2">
+        <div class="col-md-4">
+          <input class="form-control form-control-sm" name="category"
+                 placeholder="Κατηγορία" value="{{ current_cat or 'ΒΑΣΙΚΑ ΣΤΟΙΧΕΙΑ ΟΧΗΜΑΤΟΣ' }}" required>
+        </div>
+        <div class="col-md-6">
+          <input class="form-control form-control-sm" name="item_name"
+                 placeholder="Περιγραφή (π.χ. Φρένα)" required>
+        </div>
+        <div class="col-md-1 d-flex align-items-center">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="add_to_master" value="1" id="addmaster">
+            <label class="form-check-label" for="addmaster">Μνήμη</label>
+          </div>
+        </div>
+        <div class="col-md-1">
+          <button class="btn btn-success btn-sm w-100" type="submit">+</button>
+        </div>
+      </form>
+
+      <div class="text-muted mt-2" style="font-size:13px;">
+        ✔ Αν τσεκάρεις “Μνήμη”, το item θα εμφανίζεται αυτόματα σε όλες τις νέες επισκέψεις.
       </div>
     </div>
-
-
-    {% set current_category = None %}
-
-    {% for ln in lines %}
-
-      {% if ln.category != current_category %}
-        {% set current_category = ln.category %}
-        <h5 class="mt-4">{{ current_category }}</h5>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead>
-              <tr>
-                <th>Έλεγχος</th>
-                <th style="width:120px;">Κατάσταση</th>
-                <th style="width:200px;">Parts Code</th>
-                <th style="width:90px;">Qty</th>
-                <th style="width:160px;">Σημειώσεις</th>
-                <th style="width:140px;">Εξαίρεση</th>
-              </tr>
-            </thead>
-            <tbody>
-      {% endif %}
-
-      <tr>
-        <td>{{ ln.item_name }}</td>
-
-        <td>
-          <select name="result_{{ ln.id }}" class="form-select form-select-sm">
-            <option value="OK" {% if ln.result=="OK" %}selected{% endif %}>OK</option>
-            <option value="CHECK" {% if ln.result=="CHECK" %}selected{% endif %}>CHECK</option>
-            <option value="REPAIR" {% if ln.result=="REPAIR" %}selected{% endif %}>REPAIR</option>
-          </select>
-        </td>
-
-        <td>
-          <input type="text"
-                 name="parts_code_{{ ln.id }}"
-                 value="{{ ln.parts_code or '' }}"
-                 class="form-control form-control-sm">
-        </td>
-
-        <td>
-          <input type="number"
-                 name="parts_qty_{{ ln.id }}"
-                 value="{{ ln.parts_qty or 0 }}"
-                 class="form-control form-control-sm">
-        </td>
-
-        <td>
-          <input type="text"
-                 name="notes_{{ ln.id }}"
-                 value="{{ ln.notes or '' }}"
-                 class="form-control form-control-sm">
-        </td>
-
-        <td>
-          <input type="hidden" name="exclude_{{ ln.id }}" value="0">
-          <input type="checkbox"
-                 name="exclude_{{ ln.id }}"
-                 value="1"
-                 {% if ln.exclude_from_print %}checked{% endif %}>
-          Μην τυπώνεται
-        </td>
-
-      </tr>
-
-      {% if loop.last or lines[loop.index].category != current_category %}
-            </tbody>
-          </table>
-        </div>
-      {% endif %}
-
-    {% endfor %}
-
-    <div class="mt-4">
-      <button class="btn btn-success">Αποθήκευση</button>
-    </div>
-
-  </form>
+  </div>
 
 </div>
 
