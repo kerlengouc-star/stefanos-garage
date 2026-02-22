@@ -1,5 +1,6 @@
 import os
 import traceback
+from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, Request, Depends, Form, Response
@@ -13,13 +14,13 @@ from .db import get_db, engine
 from .models import Base, ChecklistItem, Visit, VisitChecklistLine
 from .pdf_utils import build_jobcard_pdf
 
-
 app = FastAPI()
 
+# Templates
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-# ✅ Default checklist (μπαίνει στη "μνήμη" αν είναι άδεια)
+# Default checklist to seed "memory" (ChecklistItem)
 DEFAULT_CATEGORY = "ΒΑΣΙΚΑ ΣΤΟΙΧΕΙΑ ΟΧΗΜΑΤΟΣ"
 DEFAULT_CHECKLIST = [
     "Γενικο Σερβις",
@@ -50,11 +51,14 @@ DEFAULT_CHECKLIST = [
     "Κοντρα σουστες καπο πισω",
 ]
 
+
 @app.on_event("startup")
 def startup():
+    # Create DB tables if missing
     Base.metadata.create_all(bind=engine)
 
 
+# Show real error instead of generic Internal Server Error
 @app.exception_handler(Exception)
 async def all_exception_handler(request: Request, exc: Exception):
     tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
@@ -63,14 +67,31 @@ async def all_exception_handler(request: Request, exc: Exception):
 
 
 def seed_master_if_empty(db: Session):
-    # Αν δεν υπάρχουν checklist items, βάλε τα default
-    cnt = db.query(ChecklistItem).count()
-    if cnt == 0:
+    """If checklist memory is empty, seed default items once."""
+    if db.query(ChecklistItem).count() == 0:
         for name in DEFAULT_CHECKLIST:
             db.add(ChecklistItem(category=DEFAULT_CATEGORY, name=name))
         db.commit()
 
 
+def combine_dt(d: Optional[str], t: Optional[str]):
+    """
+    Combine date + time strings into datetime.
+    If model columns are DateTime, datetime is correct.
+    """
+    d = (d or "").strip()
+    t = (t or "").strip()
+    if not d:
+        return None
+    if not t:
+        t = "00:00"
+    # Expect YYYY-MM-DD and HH:MM
+    return datetime.fromisoformat(f"{d}T{t}:00")
+
+
+# -----------------------------
+# Index
+# -----------------------------
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Session = Depends(get_db)):
     seed_master_if_empty(db)
@@ -78,6 +99,9 @@ def index(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("index.html", {"request": request, "user": None, "visits": visits})
 
 
+# -----------------------------
+# Create new visit
+# -----------------------------
 @app.post("/visits/new")
 def create_visit(request: Request, db: Session = Depends(get_db)):
     seed_master_if_empty(db)
@@ -97,35 +121,47 @@ def create_visit(request: Request, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(v)
 
+    # Seed visit lines from master checklist
     items = db.query(ChecklistItem).order_by(ChecklistItem.category, ChecklistItem.name).all()
     for it in items:
-        db.add(VisitChecklistLine(
-            visit_id=v.id,
-            category=it.category,
-            item_name=it.name,
-            result="OK",
-            notes="",
-            parts_code="",
-            parts_qty=0,
-        ))
+        db.add(
+            VisitChecklistLine(
+                visit_id=v.id,
+                category=it.category,
+                item_name=it.name,
+                result="OK",
+                notes="",
+                parts_code="",
+                parts_qty=0,
+            )
+        )
     db.commit()
 
     return RedirectResponse(f"/visits/{v.id}", status_code=302)
 
 
+# -----------------------------
+# Visit page
+# -----------------------------
 @app.get("/visits/{visit_id}", response_class=HTMLResponse)
 def visit_page(visit_id: int, request: Request, db: Session = Depends(get_db)):
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    lines = db.query(VisitChecklistLine).filter(
-        VisitChecklistLine.visit_id == visit_id
-    ).order_by(VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc()).all()
+    lines = (
+        db.query(VisitChecklistLine)
+        .filter(VisitChecklistLine.visit_id == visit_id)
+        .order_by(VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc())
+        .all()
+    )
 
     return templates.TemplateResponse("visit.html", {"request": request, "user": None, "visit": visit, "lines": lines})
 
 
+# -----------------------------
+# SAVE ALL (FULL endpoint)
+# -----------------------------
 @app.post("/visits/{visit_id}/save_all")
 async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
     form = await request.form()
@@ -134,6 +170,21 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     if not visit:
         return RedirectResponse("/", status_code=302)
 
+    # --- Arrival/Delivery date+time ---
+    # Inputs from visit.html:
+    # date_in_date, date_in_time, date_out_date, date_out_time
+    try:
+        visit.date_in = combine_dt(form.get("date_in_date"), form.get("date_in_time"))
+    except Exception:
+        # If parsing fails, keep existing value
+        pass
+
+    try:
+        visit.date_out = combine_dt(form.get("date_out_date"), form.get("date_out_time"))
+    except Exception:
+        pass
+
+    # --- Visit basic info ---
     visit.plate_number = (form.get("plate_number") or "").strip()
     visit.vin = (form.get("vin") or "").strip()
     visit.model = (form.get("model") or "").strip()
@@ -143,6 +194,7 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     visit.km = (form.get("km") or "").strip()
     visit.customer_complaint = (form.get("customer_complaint") or "").strip()
 
+    # --- Update all checklist lines ---
     lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
     for ln in lines:
         ln.result = (form.get(f"result_{ln.id}") or ln.result or "OK").strip()
@@ -159,6 +211,9 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     return RedirectResponse(f"/visits/{visit_id}", status_code=302)
 
 
+# -----------------------------
+# Add extra line (optional + save to memory)
+# -----------------------------
 @app.post("/visits/{visit_id}/lines/new")
 async def add_line(
     visit_id: int,
@@ -172,32 +227,43 @@ async def add_line(
     if not v:
         return RedirectResponse("/", status_code=302)
 
-    db.add(VisitChecklistLine(
-        visit_id=visit_id,
-        category=(category or "").strip(),
-        item_name=(item_name or "").strip(),
-        result="OK",
-        notes="",
-        parts_code="",
-        parts_qty=0,
-    ))
+    cat = (category or "").strip()
+    name = (item_name or "").strip()
+
+    db.add(
+        VisitChecklistLine(
+            visit_id=visit_id,
+            category=cat,
+            item_name=name,
+            result="OK",
+            notes="",
+            parts_code="",
+            parts_qty=0,
+        )
+    )
 
     if add_to_master == "1":
-        db.add(ChecklistItem(category=(category or "").strip(), name=(item_name or "").strip()))
+        db.add(ChecklistItem(category=cat, name=name))
 
     db.commit()
     return RedirectResponse(f"/visits/{visit_id}", status_code=302)
 
 
+# -----------------------------
+# PDF
+# -----------------------------
 @app.get("/visits/{visit_id}/pdf")
 def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    lines = db.query(VisitChecklistLine).filter(
-        VisitChecklistLine.visit_id == visit_id
-    ).order_by(VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc()).all()
+    lines = (
+        db.query(VisitChecklistLine)
+        .filter(VisitChecklistLine.visit_id == visit_id)
+        .order_by(VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc())
+        .all()
+    )
 
     company = {
         "name": "O&S STEPHANOU LTD",
@@ -220,17 +286,21 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
         "phone": visit.phone or "",
         "email": visit.email or "",
         "customer_complaint": visit.customer_complaint or "",
+        "date_in": getattr(visit, "date_in", None),
+        "date_out": getattr(visit, "date_out", None),
     }
 
     lines_d = []
     for ln in lines:
-        lines_d.append({
-            "category": ln.category or "",
-            "item_name": ln.item_name or "",
-            "result": ln.result or "",
-            "parts_code": getattr(ln, "parts_code", "") or "",
-            "parts_qty": int(getattr(ln, "parts_qty", 0) or 0),
-        })
+        lines_d.append(
+            {
+                "category": ln.category or "",
+                "item_name": ln.item_name or "",
+                "result": ln.result or "",
+                "parts_code": getattr(ln, "parts_code", "") or "",
+                "parts_qty": int(getattr(ln, "parts_qty", 0) or 0),
+            }
+        )
 
     try:
         pdf_bytes = build_jobcard_pdf(company, visit_d, lines_d)
@@ -244,25 +314,39 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
         return PlainTextResponse(f"PDF ERROR: {type(e).__name__}: {str(e)}", status_code=500)
 
 
+# -----------------------------
+# Search
+# -----------------------------
 @app.get("/search", response_class=HTMLResponse)
 def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
     q2 = (q or "").strip()
     results = []
     if q2:
         like = f"%{q2}%"
-        results = db.query(Visit).filter(or_(
-            Visit.customer_name.ilike(like),
-            Visit.phone.ilike(like),
-            Visit.email.ilike(like),
-            Visit.plate_number.ilike(like),
-            Visit.vin.ilike(like),
-            Visit.model.ilike(like),
-            Visit.job_no.ilike(like),
-        )).order_by(Visit.id.desc()).limit(200).all()
+        results = (
+            db.query(Visit)
+            .filter(
+                or_(
+                    Visit.customer_name.ilike(like),
+                    Visit.phone.ilike(like),
+                    Visit.email.ilike(like),
+                    Visit.plate_number.ilike(like),
+                    Visit.vin.ilike(like),
+                    Visit.model.ilike(like),
+                    Visit.job_no.ilike(like),
+                )
+            )
+            .order_by(Visit.id.desc())
+            .limit(200)
+            .all()
+        )
 
     return templates.TemplateResponse("search.html", {"request": request, "user": None, "q": q2, "results": results})
 
 
+# -----------------------------
+# Checklist memory admin
+# -----------------------------
 @app.get("/checklist", response_class=HTMLResponse)
 def checklist_admin(request: Request, db: Session = Depends(get_db)):
     seed_master_if_empty(db)
