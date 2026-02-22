@@ -434,3 +434,6 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+@app.get("/__ping")
+def __ping():
+    return {"ok": True, "where": "app/main.py"}
