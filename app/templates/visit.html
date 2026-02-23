@@ -16,7 +16,6 @@
     <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}?mode=all">Όλα</a>
     <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}?mode=selected">Επιλεγμένα</a>
 
-    <!-- ✅ Τα κουμπιά που ζήτησες -->
     <button form="visitForm"
             class="btn btn-primary btn-sm"
             type="submit"
@@ -35,7 +34,6 @@
       Print
     </a>
 
-    <!-- Email: ανοίγει το email app με link στο PDF (χωρίς SMTP ρυθμίσεις) -->
     <a class="btn btn-outline-primary btn-sm"
        href="mailto:{{ visit.email or '' }}?subject={{ ('Job ' ~ (visit.job_no or visit.id))|urlencode }}&body={{ ('Καλημέρα,%0D%0A%0D%0AΣας στέλνω το PDF:%0D%0A' ~ (request.base_url|string) ~ 'visits/' ~ visit.id ~ '/pdf%0D%0A%0D%0AΜε εκτίμηση,%0D%0AO&S STEPHANOU LTD')|safe }}">
       Email
@@ -46,7 +44,6 @@
 <form id="visitForm" method="post" action="/visits/{{ visit.id }}/save_all" autocomplete="off">
   <input type="hidden" name="mode" value="{{ mode }}">
   <input type="hidden" name="action" value="">
-  <!-- ✅ ένα ΜΟΝΟ after_save, για να δουλεύει σωστά το PDF -->
   <input type="hidden" name="after_save" id="after_save" value="stay">
 
   <div class="card shadow-sm mb-3">
@@ -56,12 +53,12 @@
       <div class="row g-2">
         <div class="col-md-3">
           <label class="form-label">Ημ/νία Άφιξης</label>
-          <input class="form-control" type="date" name="date_in_date"
+          <input id="date_in_date" class="form-control" type="date" name="date_in_date"
                  value="{% if visit.date_in %}{{ visit.date_in.strftime('%Y-%m-%d') }}{% endif %}">
         </div>
         <div class="col-md-3">
           <label class="form-label">Ώρα Άφιξης</label>
-          <input class="form-control" type="time" name="date_in_time"
+          <input id="date_in_time" class="form-control" type="time" name="date_in_time"
                  value="{% if visit.date_in %}{{ visit.date_in.strftime('%H:%M') }}{% endif %}">
         </div>
         <div class="col-md-3">
@@ -106,7 +103,7 @@
         </div>
 
         <div class="col-12">
-          <label class="form-label">Παράπονο πελάτη</label>
+          <label class="form-label">Απαίτηση πελάτη</label>
           <textarea class="form-control" rows="2" name="customer_complaint" autocomplete="off">{{ visit.customer_complaint or '' }}</textarea>
         </div>
       </div>
@@ -144,7 +141,6 @@
             </select>
           </div>
 
-          <!-- ✅ Μοναδικά ανά γραμμή -->
           <div class="col-md-2">
             <div class="small text-muted">Κωδικός Εξαρτήματος</div>
             <input class="form-control form-control-sm"
@@ -191,7 +187,6 @@
     </div>
   </div>
 
-  <!-- Κάτω μέρος: το + που ήδη δουλεύει -->
   <div class="card shadow-sm mb-3" id="addnew">
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center">
@@ -227,5 +222,25 @@
   </div>
 
 </form>
+
+<script>
+(function() {
+  // ✅ Πάρε ώρα/ημερομηνία από τον υπολογιστή (browser) ΜΟΝΟ αν είναι άδεια
+  const d = document.getElementById("date_in_date");
+  const t = document.getElementById("date_in_time");
+  if (d && t) {
+    if (!d.value || !t.value) {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mi = String(now.getMinutes()).padStart(2, "0");
+      if (!d.value) d.value = `${yyyy}-${mm}-${dd}`;
+      if (!t.value) t.value = `${hh}:${mi}`;
+    }
+  }
+})();
+</script>
 
 {% endblock %}
