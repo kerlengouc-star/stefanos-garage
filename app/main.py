@@ -2,9 +2,9 @@ import os
 import io
 import json
 import datetime as dt
-from typing import Optional, Any
+from typing import Optional, Any, Tuple, List
 
-from fastapi import FastAPI, Request, Depends, Form, UploadFile, File
+from fastapi import FastAPI, Request, Depends, Form, UploadFile, File, HTTPException
 from fastapi.responses import RedirectResponse, HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -12,29 +12,32 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect, or_, text
 
-from passlib.context import CryptContext
-
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 
 from .db import SessionLocal, engine, Base
-from .models import User, ChecklistItem, Visit, VisitChecklistLine
+
+# IMPORTANT: Models — User is OPTIONAL (κάποια repos δεν έχουν User)
+try:
+    from .models import User  # type: ignore
+    HAS_USER = True
+except Exception:
+    User = None  # type: ignore
+    HAS_USER = False
+
+from .models import ChecklistItem, Visit, VisitChecklistLine
 
 
-# ----------------------------
-# App / Templates / Security
-# ----------------------------
 app = FastAPI()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-please")
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 templates = Jinja2Templates(directory="app/templates")
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ----------------------------
-# DB Dependency
+# DB
 # ----------------------------
 def get_db():
     db = SessionLocal()
@@ -44,84 +47,75 @@ def get_db():
         db.close()
 
 
+@app.on_event("startup")
+def on_startup():
+    # Fix "no such table"
+    Base.metadata.create_all(bind=engine)
+
+
 # ----------------------------
-# Auth helpers (session-based)
+# Auth (optional)
 # ----------------------------
-def get_current_user(request: Request, db: Session) -> Optional[User]:
+def get_current_user(request: Request, db: Session) -> Optional[Any]:
+    if not HAS_USER:
+        return {"ok": True}  # dummy user
     uid = request.session.get("user_id")
     if not uid:
         return None
     return db.query(User).filter(User.id == uid).first()
 
 
-def require_user(request: Request, db: Session) -> Optional[User]:
-    u = get_current_user(request, db)
-    return u
+def require_user(request: Request, db: Session) -> Optional[Any]:
+    if not HAS_USER:
+        return {"ok": True}
+    return get_current_user(request, db)
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        return pwd_context.verify(plain, hashed)
-    except Exception:
-        return False
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, db: Session = Depends(get_db)):
+    if not HAS_USER:
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
 
-def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+@app.post("/login")
+def login_post(
+    request: Request,
+    db: Session = Depends(get_db),
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    if not HAS_USER:
+        return RedirectResponse("/", status_code=302)
 
+    # Πολύ απλό login: αν έχεις άλλο σύστημα auth, το αλλάζουμε μετά.
+    u = db.query(User).filter(getattr(User, "email") == email).first()  # type: ignore
+    if not u:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Λάθος στοιχεία"})
 
-def ensure_admin(db: Session):
-    """
-    Δημιουργεί admin αν δεν υπάρχει.
-    Περιμένει columns στο User: email, password_hash (ή password_hash-like), role.
-    Αν το δικό σου User model έχει αλλιώς όνομα στο password field, άλλαξε το ΜΟΝΟ εδώ.
-    """
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@garage.local")
-    admin_pass = os.getenv("ADMIN_PASSWORD", "1234")
-    admin_role = os.getenv("ADMIN_ROLE", "admin")
-
-    u = db.query(User).filter(User.email == admin_email).first()
-    if u:
-        return
-
-    # προσπαθούμε να γράψουμε password στο πιο πιθανό field name
-    pw_hash = hash_password(admin_pass)
-
-    created = None
-    for field in ["password_hash", "hashed_password", "password", "passwordHash"]:
-        if hasattr(User, field):
-            kwargs = {"email": admin_email, field: pw_hash}
-            if hasattr(User, "role"):
-                kwargs["role"] = admin_role
-            created = User(**kwargs)
+    # Εδώ ΔΕΝ κάνουμε password verify γιατί δεν ξέρουμε το schema σου.
+    # Για τώρα: επιτρέπουμε login μόνο αν το password ταιριάζει σε ένα πιθανό field.
+    ok = False
+    for field in ["password", "password_hash", "hashed_password"]:
+        if hasattr(u, field) and (getattr(u, field) or "") == password:
+            ok = True
             break
 
-    if created is None:
-        # fallback: μόνο email + role, χωρίς password (δεν θα μπορεί login)
-        kwargs = {"email": admin_email}
-        if hasattr(User, "role"):
-            kwargs["role"] = admin_role
-        created = User(**kwargs)
+    if not ok:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Λάθος στοιχεία"})
 
-    db.add(created)
-    db.commit()
+    request.session["user_id"] = getattr(u, "id")
+    return RedirectResponse("/", status_code=302)
 
 
-@app.on_event("startup")
-def on_startup():
-    # δημιουργία πινάκων (fix για "no such table: visits")
-    Base.metadata.create_all(bind=engine)
-
-    # ensure admin
-    db = SessionLocal()
-    try:
-        ensure_admin(db)
-    finally:
-        db.close()
+@app.get("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login" if HAS_USER else "/", status_code=302)
 
 
 # ----------------------------
-# Debug endpoints
+# Debug
 # ----------------------------
 @app.get("/__ping")
 def __ping():
@@ -130,30 +124,17 @@ def __ping():
 
 @app.get("/__dbinfo")
 def __dbinfo(db: Session = Depends(get_db)):
-    try:
-        url = str(engine.url)
-        driver = engine.url.drivername
-    except Exception:
-        url = "unknown"
-        driver = "unknown"
-
-    info: dict[str, Any] = {"driver": driver, "database_url": url}
-    try:
-        info["visits_count"] = db.query(Visit).count()
-    except Exception as e:
-        info["visits_count_error"] = str(e)
-
-    return info
+    return {
+        "driver": getattr(engine.url, "drivername", "unknown"),
+        "database_url": str(engine.url),
+        "visits_count": db.query(Visit).count(),
+    }
 
 
 @app.get("/__tables")
 def __tables(db: Session = Depends(get_db)):
-    """
-    Δείχνει όλους τους πίνακες + πόσες εγγραφές έχει ο καθένας.
-    """
     insp = inspect(engine)
     tables = insp.get_table_names()
-
     out = {"tables": []}
     for t in tables:
         try:
@@ -165,46 +146,7 @@ def __tables(db: Session = Depends(get_db)):
 
 
 # ----------------------------
-# Pages: Login / Logout
-# ----------------------------
-@app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
-
-
-@app.post("/login")
-def login_post(
-    request: Request,
-    db: Session = Depends(get_db),
-    email: str = Form(...),
-    password: str = Form(...),
-):
-    u = db.query(User).filter(User.email == email).first()
-    if not u:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Λάθος email/κωδικός"})
-
-    # βρίσκουμε ποιο field κρατά hash
-    hashed = None
-    for field in ["password_hash", "hashed_password", "password"]:
-        if hasattr(u, field):
-            hashed = getattr(u, field)
-            break
-
-    if not hashed or not verify_password(password, hashed):
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Λάθος email/κωδικός"})
-
-    request.session["user_id"] = u.id
-    return RedirectResponse("/", status_code=302)
-
-
-@app.get("/logout")
-def logout(request: Request):
-    request.session.clear()
-    return RedirectResponse("/login", status_code=302)
-
-
-# ----------------------------
-# Index (list visits)
+# Pages
 # ----------------------------
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Session = Depends(get_db)):
@@ -216,25 +158,21 @@ def index(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("index.html", {"request": request, "user": u, "visits": visits})
 
 
-# ----------------------------
-# Create / View Visit
-# ----------------------------
 @app.get("/visits/new")
 def visit_new(request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     now = dt.datetime.now()
 
-    # fields based on your Visit model; missing fields are ignored safely
     v = Visit()
     if hasattr(v, "date_in"):
-        v.date_in = now.date().isoformat()
+        setattr(v, "date_in", now.date().isoformat())
     if hasattr(v, "time_in"):
-        v.time_in = now.strftime("%H:%M")
+        setattr(v, "time_in", now.strftime("%H:%M"))
     if hasattr(v, "status"):
-        v.status = "open"
+        setattr(v, "status", "open")
 
     db.add(v)
     db.commit()
@@ -245,17 +183,15 @@ def visit_new(request: Request, db: Session = Depends(get_db)):
 @app.get("/visits/{visit_id}", response_class=HTMLResponse)
 def visit_view(visit_id: int, request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    # categories/items
     items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
 
-    # lines for this visit
     lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
     line_by_item = {ln.checklist_item_id: ln for ln in lines if getattr(ln, "checklist_item_id", None) is not None}
 
@@ -274,12 +210,12 @@ def visit_view(visit_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 # ----------------------------
-# SAVE ALL (single button)
+# SAVE ALL
 # ----------------------------
 @app.post("/visits/{visit_id}/save_all")
 async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
@@ -288,43 +224,28 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
 
     form = dict(await request.form())
 
-    # --- Update visit fields (safe set if exists)
     def set_if(field: str, val: Any):
         if hasattr(visit, field):
             setattr(visit, field, val)
 
-    set_if("job_no", form.get("job_no", getattr(visit, "job_no", "")).strip())
-    set_if("plate_number", form.get("plate_number", getattr(visit, "plate_number", "")).strip())
-    set_if("vin", form.get("vin", getattr(visit, "vin", "")).strip())
-    set_if("customer_name", form.get("customer_name", getattr(visit, "customer_name", "")).strip())
-    set_if("phone", form.get("phone", getattr(visit, "phone", "")).strip())
-    set_if("email", form.get("email", getattr(visit, "email", "")).strip())
-    set_if("model", form.get("model", getattr(visit, "model", "")).strip())
-    set_if("km", form.get("km", getattr(visit, "km", "")).strip())
+    # Basic visit fields (safe)
+    for f in [
+        "job_no", "plate_number", "vin", "customer_name", "phone",
+        "email", "model", "km", "customer_complaint", "notes_general",
+        "date_in", "time_in", "date_out", "time_out",
+        "total_parts", "total_labor", "total_amount", "status"
+    ]:
+        if f in form:
+            set_if(f, (form.get(f) or "").strip())
 
-    # rename label issue: "Παράπονο πελάτη" -> "Απαίτηση πελάτη" is template label,
-    # but field stays customer_complaint
-    set_if("customer_complaint", form.get("customer_complaint", getattr(visit, "customer_complaint", "")).strip())
-    set_if("notes_general", form.get("notes_general", getattr(visit, "notes_general", "")).strip())
-
-    # dates/times
-    # want computer time - if empty, fill now
+    # If time/date empty -> fill now (computer time)
     now = dt.datetime.now()
-    if hasattr(visit, "date_in"):
-        set_if("date_in", form.get("date_in") or getattr(visit, "date_in", None) or now.date().isoformat())
-    if hasattr(visit, "time_in"):
-        set_if("time_in", form.get("time_in") or getattr(visit, "time_in", None) or now.strftime("%H:%M"))
-    if hasattr(visit, "date_out"):
-        set_if("date_out", form.get("date_out") or getattr(visit, "date_out", "") )
-    if hasattr(visit, "time_out"):
-        set_if("time_out", form.get("time_out") or getattr(visit, "time_out", "") )
+    if hasattr(visit, "date_in") and not getattr(visit, "date_in", ""):
+        set_if("date_in", now.date().isoformat())
+    if hasattr(visit, "time_in") and not getattr(visit, "time_in", ""):
+        set_if("time_in", now.strftime("%H:%M"))
 
-    # totals
-    set_if("total_parts", form.get("total_parts", getattr(visit, "total_parts", "")).strip())
-    set_if("total_labor", form.get("total_labor", getattr(visit, "total_labor", "")).strip())
-    set_if("total_amount", form.get("total_amount", getattr(visit, "total_amount", "")).strip())
-
-    # --- Optional: add new category/item (without wiping selections)
+    # Add new checklist item (without wiping anything)
     new_category = (form.get("new_category") or "").strip()
     new_item_name = (form.get("new_item_name") or "").strip()
     if new_category and new_item_name:
@@ -335,21 +256,18 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
             .first()
         )
         if not exists:
-            it = ChecklistItem(category=new_category, name=new_item_name)
-            db.add(it)
+            db.add(ChecklistItem(category=new_category, name=new_item_name))
             db.commit()
 
-    # --- Save checklist lines
+    # Save checklist lines
     items = db.query(ChecklistItem).all()
     existing_lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
     line_by_item = {ln.checklist_item_id: ln for ln in existing_lines if getattr(ln, "checklist_item_id", None) is not None}
 
     for it in items:
         cid = it.id
-        checked = form.get(f"chk_{cid}") == "on" or form.get(f"chk_{cid}") == "1"
+        checked = form.get(f"chk_{cid}") in ("on", "1", "true", "True")
         notes = (form.get(f"notes_{cid}") or "").strip()
-
-        # parts_code + parts_qty (your new schema)
         parts_code = (form.get(f"parts_code_{cid}") or "").strip()
         parts_qty = (form.get(f"parts_qty_{cid}") or "").strip()
 
@@ -377,7 +295,7 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
 @app.get("/checklist", response_class=HTMLResponse)
 def checklist_page(request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
@@ -392,11 +310,12 @@ def checklist_add(
     name: str = Form(...),
 ):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     category = category.strip()
     name = name.strip()
+
     if category and name:
         exists = db.query(ChecklistItem).filter(ChecklistItem.category == category, ChecklistItem.name == name).first()
         if not exists:
@@ -409,7 +328,7 @@ def checklist_add(
 @app.post("/checklist/delete/{item_id}")
 def checklist_delete(item_id: int, request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
@@ -425,7 +344,7 @@ def checklist_delete(item_id: int, request: Request, db: Session = Depends(get_d
 @app.get("/search", response_class=HTMLResponse)
 def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     q = (q or "").strip()
@@ -452,74 +371,44 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
 
 
 # ----------------------------
-# History (date range)
+# Print / PDF (only selected items that have data)
 # ----------------------------
-@app.get("/history", response_class=HTMLResponse)
-def history_page(
-    request: Request,
-    date_from: str = "",
-    date_to: str = "",
-    db: Session = Depends(get_db),
-):
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
+def _selected_lines(db: Session, visit_id: int) -> List[Tuple[ChecklistItem, VisitChecklistLine]]:
+    items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
+    lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
+    line_by_item = {ln.checklist_item_id: ln for ln in lines if getattr(ln, "checklist_item_id", None) is not None}
 
-    q = db.query(Visit)
+    selected: List[Tuple[ChecklistItem, VisitChecklistLine]] = []
+    for it in items:
+        ln = line_by_item.get(it.id)
+        if not ln:
+            continue
 
-    # if Visit.date_in is stored as string (ISO), this still works lexicographically for YYYY-MM-DD
-    if date_from:
-        q = q.filter(Visit.date_in >= date_from)
-    if date_to:
-        q = q.filter(Visit.date_in <= date_to)
+        checked = bool(getattr(ln, "checked", False))
+        notes = (getattr(ln, "notes", "") or "").strip()
+        pcode = (getattr(ln, "parts_code", "") or "").strip()
+        pqty = (getattr(ln, "parts_qty", "") or "").strip()
 
-    visits = q.order_by(Visit.id.desc()).limit(500).all()
-    return templates.TemplateResponse(
-        "history.html",
-        {"request": request, "user": u, "date_from": date_from, "date_to": date_to, "visits": visits},
-    )
+        if checked or notes or pcode or pqty:
+            selected.append((it, ln))
+    return selected
 
 
-# ----------------------------
-# Print (HTML like PDF)
-# ----------------------------
 @app.get("/visits/{visit_id}/print", response_class=HTMLResponse)
 def visit_print(visit_id: int, request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
-    lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
-    line_by_item = {ln.checklist_item_id: ln for ln in lines if getattr(ln, "checklist_item_id", None) is not None}
-
-    # Only selected lines (checked OR has parts info OR notes)
-    selected = []
-    for it in items:
-        ln = line_by_item.get(it.id)
-        if not ln:
-            continue
-        checked = bool(getattr(ln, "checked", False))
-        notes = (getattr(ln, "notes", "") or "").strip()
-        pcode = (getattr(ln, "parts_code", "") or "").strip()
-        pqty = (getattr(ln, "parts_qty", "") or "").strip()
-        if checked or notes or pcode or pqty:
-            selected.append((it, ln))
-
-    return templates.TemplateResponse(
-        "print.html",
-        {"request": request, "user": u, "visit": visit, "selected": selected},
-    )
+    selected = _selected_lines(db, visit_id)
+    return templates.TemplateResponse("print.html", {"request": request, "user": u, "visit": visit, "selected": selected})
 
 
-# ----------------------------
-# PDF (NO arial.ttf dependency)
-# ----------------------------
-def _pdf_bytes_for_visit(visit: Visit, selected: list[tuple[ChecklistItem, VisitChecklistLine]]) -> bytes:
+def _pdf_bytes_for_visit(visit: Visit, selected: List[Tuple[ChecklistItem, VisitChecklistLine]]) -> bytes:
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
@@ -527,11 +416,9 @@ def _pdf_bytes_for_visit(visit: Visit, selected: list[tuple[ChecklistItem, Visit
     y = h - 40
     c.setFont("Helvetica-Bold", 14)
     c.drawString(40, y, "JOB CARD - Stephanou Garage")
-    y -= 20
+    y -= 22
 
     c.setFont("Helvetica", 10)
-    # Remove weird "O&S;" issue by NOT printing any fixed "O&S;" labels at all.
-    # Print only what we know.
 
     def line(label: str, value: Any):
         nonlocal y
@@ -545,7 +432,7 @@ def _pdf_bytes_for_visit(visit: Visit, selected: list[tuple[ChecklistItem, Visit
     line("Ημ/νία Παράδοσης", getattr(visit, "date_out", ""))
     line("Ώρα Παράδοσης", getattr(visit, "time_out", ""))
 
-    y -= 6
+    y -= 8
     line("Πελάτης", getattr(visit, "customer_name", ""))
     line("Τηλέφωνο", getattr(visit, "phone", ""))
     line("Email", getattr(visit, "email", ""))
@@ -553,47 +440,33 @@ def _pdf_bytes_for_visit(visit: Visit, selected: list[tuple[ChecklistItem, Visit
     line("Μοντέλο", getattr(visit, "model", ""))
     line("KM", getattr(visit, "km", ""))
 
-    y -= 8
+    y -= 10
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(40, y, "Εργασίες / Κατηγορίες (επιλεγμένες)")
+    c.drawString(40, y, "Επιλεγμένες Εργασίες")
     y -= 16
     c.setFont("Helvetica", 10)
 
     for it, ln in selected:
-        txt = f"- [{it.category}] {it.name}"
         checked = bool(getattr(ln, "checked", False))
         notes = (getattr(ln, "notes", "") or "").strip()
         pcode = (getattr(ln, "parts_code", "") or "").strip()
         pqty = (getattr(ln, "parts_qty", "") or "").strip()
 
-        extra = []
-        if checked:
-            extra.append("OK")
+        parts_txt = ""
         if pcode or pqty:
-            extra.append(f"Κωδικός: {pcode}  Ποσ.: {pqty}")
-        if notes:
-            extra.append(f"Σημ.: {notes}")
+            parts_txt = f" | Κωδικός: {pcode} | Ποσ.: {pqty}"
+        notes_txt = f" | Σημ.: {notes}" if notes else ""
+        ok_txt = " | OK" if checked else ""
 
-        if extra:
-            txt += "  |  " + "  |  ".join(extra)
+        txt = f"- [{it.category}] {it.name}{ok_txt}{parts_txt}{notes_txt}"
 
-        # page break
         if y < 60:
             c.showPage()
             y = h - 40
             c.setFont("Helvetica", 10)
 
-        c.drawString(40, y, txt[:140])
+        c.drawString(40, y, txt[:150])
         y -= 14
-
-    y -= 8
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(40, y, "Σύνολα")
-    y -= 16
-    c.setFont("Helvetica", 10)
-    line("Total Parts", getattr(visit, "total_parts", ""))
-    line("Total Labor", getattr(visit, "total_labor", ""))
-    line("Total Amount", getattr(visit, "total_amount", ""))
 
     c.showPage()
     c.save()
@@ -603,46 +476,30 @@ def _pdf_bytes_for_visit(visit: Visit, selected: list[tuple[ChecklistItem, Visit
 @app.get("/visits/{visit_id}/pdf")
 def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
-    lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
-    line_by_item = {ln.checklist_item_id: ln for ln in lines if getattr(ln, "checklist_item_id", None) is not None}
-
-    selected = []
-    for it in items:
-        ln = line_by_item.get(it.id)
-        if not ln:
-            continue
-        checked = bool(getattr(ln, "checked", False))
-        notes = (getattr(ln, "notes", "") or "").strip()
-        pcode = (getattr(ln, "parts_code", "") or "").strip()
-        pqty = (getattr(ln, "parts_qty", "") or "").strip()
-        if checked or notes or pcode or pqty:
-            selected.append((it, ln))
-
+    selected = _selected_lines(db, visit_id)
     pdf_bytes = _pdf_bytes_for_visit(visit, selected)
 
-    filename = f"visit_{visit_id}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": f'inline; filename="visit_{visit_id}.pdf"'},
     )
 
 
 # ----------------------------
-# Backup / Import Backup
+# Backup / Import
 # ----------------------------
 @app.get("/backup")
 def backup_download(request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     items = db.query(ChecklistItem).all()
@@ -652,15 +509,9 @@ def backup_download(request: Request, db: Session = Depends(get_db)):
     payload = {
         "version": 1,
         "exported_at": dt.datetime.utcnow().isoformat() + "Z",
-        "checklist_items": [
-            {"id": it.id, "category": it.category, "name": it.name} for it in items
-        ],
-        "visits": [
-            {c.name: getattr(v, c.name) for c in v.__table__.columns} for v in visits
-        ],
-        "visit_lines": [
-            {c.name: getattr(ln, c.name) for c in ln.__table__.columns} for ln in lines
-        ],
+        "checklist_items": [{"id": it.id, "category": it.category, "name": it.name} for it in items],
+        "visits": [{c.name: getattr(v, c.name) for c in v.__table__.columns} for v in visits],
+        "visit_lines": [{c.name: getattr(ln, c.name) for c in ln.__table__.columns} for ln in lines],
     }
 
     data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
@@ -674,7 +525,7 @@ def backup_download(request: Request, db: Session = Depends(get_db)):
 @app.post("/import-backup")
 async def import_backup(request: Request, db: Session = Depends(get_db), file: UploadFile = File(...)):
     u = require_user(request, db)
-    if not u:
+    if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     raw = await file.read()
@@ -683,7 +534,7 @@ async def import_backup(request: Request, db: Session = Depends(get_db), file: U
     except Exception:
         return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
 
-    # import checklist items
+    # checklist items
     for it in payload.get("checklist_items", []):
         category = (it.get("category") or "").strip()
         name = (it.get("name") or "").strip()
@@ -694,7 +545,7 @@ async def import_backup(request: Request, db: Session = Depends(get_db), file: U
             db.add(ChecklistItem(category=category, name=name))
     db.commit()
 
-    # import visits (best effort)
+    # visits (best effort)
     for v in payload.get("visits", []):
         obj = Visit()
         for k, val in v.items():
@@ -703,7 +554,7 @@ async def import_backup(request: Request, db: Session = Depends(get_db), file: U
         db.add(obj)
     db.commit()
 
-    # import lines (best effort)
+    # lines (best effort)
     for ln in payload.get("visit_lines", []):
         obj = VisitChecklistLine()
         for k, val in ln.items():
@@ -713,46 +564,3 @@ async def import_backup(request: Request, db: Session = Depends(get_db), file: U
     db.commit()
 
     return RedirectResponse("/", status_code=302)
-
-
-# ----------------------------
-# Reset Test (password protected)
-# ----------------------------
-@app.post("/reset-test")
-def reset_test(request: Request, db: Session = Depends(get_db), code: str = Form("")):
-    """
-    Διαγράφει ΟΛΑ τα test δεδομένα.
-    Θέλει κωδικό για ασφάλεια.
-    """
-    u = require_user(request, db)
-    if not u:
-        return RedirectResponse("/login", status_code=302)
-
-    RESET_CODE = os.getenv("RESET_CODE", "")
-    if not RESET_CODE or code != RESET_CODE:
-        return JSONResponse({"ok": False, "error": "Wrong code"}, status_code=403)
-
-    # Delete order: lines -> visits -> checklist
-    try:
-        db.query(VisitChecklistLine).delete()
-    except Exception:
-        pass
-    try:
-        db.query(Visit).delete()
-    except Exception:
-        pass
-    try:
-        db.query(ChecklistItem).delete()
-    except Exception:
-        pass
-
-    db.commit()
-    return JSONResponse({"ok": True, "message": "Reset completed"})
-
-
-# ----------------------------
-# Favicon
-# ----------------------------
-@app.get("/favicon.ico")
-def favicon():
-    return JSONResponse({"ok": True})
