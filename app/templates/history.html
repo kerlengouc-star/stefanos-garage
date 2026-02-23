@@ -12,11 +12,12 @@
       <input class="form-control" type="date" name="to_date" value="{{ to_date }}">
     </div>
     <div>
-      <label class="form-label mb-0 small-muted">Search</label>
-      <input class="form-control" name="q" value="{{ q }}" placeholder="όνομα, πινακίδα, κτλ">
+      <label class="form-label mb-0 small-muted">Αναζήτηση</label>
+      <input class="form-control" name="q" value="{{ q }}" placeholder="Όνομα / Πινακίδα / Τηλέφωνο / Μοντέλο">
     </div>
     <div class="align-self-end">
-      <button class="btn btn-primary">Filter</button>
+      <button class="btn btn-primary">Search</button>
+      <a class="btn btn-outline-secondary" href="/">Πίσω</a>
     </div>
   </form>
 </div>
@@ -24,22 +25,32 @@
 <div class="card">
   <div class="card-header fw-semibold">Επισκέψεις ({{ visits|length }})</div>
   <div class="card-body p-0">
-    <table class="table table-striped mb-0">
+    <table class="table table-striped mb-0 align-middle">
       <thead>
         <tr>
-          <th>ID</th><th>Πελάτης</th><th>Πινακίδα</th><th>Άφιξη</th><th>Παράδοση</th><th>Σημειώσεις / Εργασίες</th><th></th>
+          <th style="width:80px;">ID</th>
+          <th style="width:160px;">Ημ/νία In</th>
+          <th style="width:170px;">Πελάτης</th>
+          <th style="width:140px;">Πινακίδα</th>
+          <th>Σημειώσεις / Εργασίες</th>
+          <th style="width:110px;"></th>
         </tr>
       </thead>
       <tbody>
         {% for v in visits %}
-        <tr>
-          <td class="mono">{{ v.id }}</td>
-<td>{{ v.customer_name or '' }}</td>
-          <td class="mono">{{ v.plate_number or '' }}</td>
-          <td class="mono">{{ (v.date_in.strftime('%d/%m/%Y %H:%M') if v.date_in else '') }}</td>
-          <td class="mono">{{ (v.date_out.strftime('%d/%m/%Y %H:%M') if v.date_out else '') }}</td>
-          <td><a class="btn btn-sm btn-primary" href="/visits/{{ v.id }}">Άνοιγμα</a></td>
-        </tr>
+          <tr>
+            <td class="mono">{{ v.id }}</td>
+            <td>{{ v.date_in.strftime('%Y-%m-%d %H:%M') if v.date_in else '' }}</td>
+            <td>{{ v.customer_name or '' }}</td>
+            <td>{{ v.plate_number or '' }}</td>
+            <td class="small">
+              {{ summaries.get(v.id,'') }}
+            </td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary" href="/visits/{{ v.id }}">Open</a>
+              <a class="btn btn-sm btn-outline-secondary" href="/visits/{{ v.id }}/print" target="_blank">Print</a>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>

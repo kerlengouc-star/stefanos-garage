@@ -330,7 +330,8 @@ async def visit_save_all(
 
     form = await request.form()
 
-    # update visit fields    visit.plate_number = (form.get("plate_number") or "").strip() or None
+    # update visit fields
+    visit.plate_number = (form.get("plate_number") or "").strip() or None
     visit.vin = (form.get("vin") or "").strip() or None
     visit.customer_name = (form.get("customer_name") or "").strip() or None
     visit.phone = (form.get("phone") or "").strip() or None
@@ -392,30 +393,79 @@ async def visit_save_all(
                     )
                 )
 
-    # add new checklist item (optional)
-    new_cat = (form.get("new_category") or "").strip()
-    new_item = (form.get("new_item") or "").strip()
-    if new_cat and new_item:
-        exists = db.query(ChecklistItem).filter(ChecklistItem.category == new_cat, ChecklistItem.name == new_item).first()
-        if not exists:
-            db.add(ChecklistItem(category=new_cat, name=new_item))
-            db.commit()  # need id
-        # also add to this visit as a new line
-        db.add(
-            VisitChecklistLine(
-                visit_id=visit.id,
-                category=new_cat,
-                item_name=new_item,
-                result="OK",
-                notes="",
-                parts_code="",
-                parts_qty=0,
-                exclude_from_print=False,
-            )
-        )
 
     db.commit()
     return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
+
+
+
+@app.post("/visits/{visit_id}/add_item")
+async def visit_add_item(visit_id: int, request: Request, db: Session = Depends(get_db)):
+    """Add (category + item) to global checklist and to the current visit, without overwriting visit fields."""
+    visit = db.query(Visit).filter(Visit.id == visit_id).first()
+    if not visit:
+        return RedirectResponse("/", status_code=302)
+
+    form = await request.form()
+    new_cat = (form.get("new_category") or "").strip()
+    new_item = (form.get("new_item") or "").strip()
+    if new_cat and new_item:
+        # ensure exists in master list
+        exists = (
+            db.query(ChecklistItem)
+            .filter(ChecklistItem.category == new_cat, ChecklistItem.name == new_item)
+            .first()
+        )
+        if not exists:
+            db.add(ChecklistItem(category=new_cat, name=new_item))
+            db.commit()
+
+        # ensure line not already in this visit
+        line_exists = (
+            db.query(VisitChecklistLine)
+            .filter(
+                VisitChecklistLine.visit_id == visit_id,
+                VisitChecklistLine.category == new_cat,
+                VisitChecklistLine.item_name == new_item,
+            )
+            .first()
+        )
+        if not line_exists:
+            db.add(
+                VisitChecklistLine(
+                    visit_id=visit.id,
+                    category=new_cat,
+                    item_name=new_item,
+                    result="OK",
+                    notes="",
+                    parts_code="",
+                    parts_qty=0,
+                    exclude_from_print=False,
+                )
+            )
+            db.commit()
+
+    return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
+
+
+@app.post("/visits/{visit_id}/delete_line/{line_id}")
+def visit_delete_line(visit_id: int, line_id: int, db: Session = Depends(get_db)):
+    ln = db.query(VisitChecklistLine).filter(VisitChecklistLine.id == line_id, VisitChecklistLine.visit_id == visit_id).first()
+    if ln:
+        db.delete(ln)
+        db.commit()
+    return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
+
+
+@app.post("/visits/{visit_id}/delete_category")
+async def visit_delete_category(visit_id: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    cat = (form.get("category") or "").strip()
+    if cat:
+        db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id, VisitChecklistLine.category == cat).delete(synchronize_session=False)
+        db.commit()
+    return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
+
 
 
 # =========================
@@ -529,6 +579,19 @@ def checklist_delete(item_id: int, db: Session = Depends(get_db)):
     it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
     if it:
         db.delete(it)
+        db.commit()
+    return RedirectResponse("/checklist", status_code=302)
+
+
+@app.post("/checklist/edit/{item_id}")
+async def checklist_edit(item_id: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    category = (form.get("category") or "").strip()
+    name = (form.get("name") or "").strip()
+    it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
+    if it and category and name:
+        it.category = category
+        it.name = name
         db.commit()
     return RedirectResponse("/checklist", status_code=302)
 

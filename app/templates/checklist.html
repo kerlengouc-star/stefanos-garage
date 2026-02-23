@@ -20,16 +20,23 @@
 <div class="card">
   <div class="card-header fw-semibold">Υπάρχοντα Items ({{ items|length }})</div>
   <div class="card-body p-0">
-    <table class="table table-striped mb-0">
-      <thead><tr><th>ID</th><th>Κατηγορία</th><th>Εργασία</th><th></th></tr></thead>
+    <table class="table table-striped mb-0 align-middle">
+      <thead><tr><th style="width:70px;">ID</th><th>Κατηγορία</th><th>Εργασία</th><th style="width:220px;" class="text-end">Actions</th></tr></thead>
       <tbody>
       {% for it in items %}
         <tr>
           <td class="mono">{{ it.id }}</td>
-          <td>{{ it.category }}</td>
-          <td>{{ it.name }}</td>
+          <td>
+            <form method="post" action="/checklist/edit/{{ it.id }}" class="d-flex gap-2">
+              <input class="form-control form-control-sm" name="category" value="{{ it.category }}">
+          </td>
+          <td>
+              <input class="form-control form-control-sm" name="name" value="{{ it.name }}">
+          </td>
           <td class="text-end">
-            <form method="post" action="/checklist/delete/{{ it.id }}" onsubmit="return confirm('Delete item?');">
+              <button class="btn btn-sm btn-outline-primary me-1">Save</button>
+            </form>
+            <form method="post" action="/checklist/delete/{{ it.id }}" class="d-inline" onsubmit="return confirm('Delete item?');">
               <button class="btn btn-sm btn-outline-danger">Delete</button>
             </form>
           </td>

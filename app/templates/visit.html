@@ -19,185 +19,169 @@
 {% endif %}
 
 <form method="post" action="/visits/{{ visit.id }}/save_all" class="no-print">
-<div class="row g-3">
-  <div class="col-12">
-    <div class="card mx-auto" style="max-width: 860px;">
-      <div class="card-header fw-semibold">Στοιχεία</div>
-      
-      <div class="card-body">
-        <div class="row g-2">
-<div class="col-md-3">
-            <label class="form-label">Πινακίδα</label>
-            <input class="form-control" name="plate_number" value="{{ visit.plate_number or '' }}">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">VIN</label>
-            <input class="form-control" name="vin" value="{{ visit.vin or '' }}">
-          </div>
-
-          <div class="col-md-8">
-            <label class="form-label">Μοντέλο</label>
-            <input class="form-control" name="model" value="{{ visit.model or '' }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">KM</label>
-            <input class="form-control" name="km" value="{{ visit.km or '' }}">
-          </div>
+  <div class="card mb-3 mx-auto" style="max-width: 980px;">
+    <div class="card-header fw-semibold">Στοιχεία Πελάτη / Οχήματος</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label">Πινακίδα</label>
+          <input class="form-control" name="plate_number" value="{{ visit.plate_number or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">VIN</label>
+          <input class="form-control" name="vin" value="{{ visit.vin or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Μοντέλο</label>
+          <input class="form-control" name="model" value="{{ visit.model or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">KM</label>
+          <input class="form-control" name="km" value="{{ visit.km or '' }}">
         </div>
 
-        <hr class="my-3">
-
-        <div class="row g-2">
-          <div class="col-md-5">
-            <label class="form-label">Όνομα Πελάτη</label>
-            <input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Τηλέφωνο</label>
-            <input class="form-control" name="phone" value="{{ visit.phone or '' }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Email</label>
-            <input class="form-control" name="email" value="{{ visit.email or '' }}">
-          </div>
+        <div class="col-md-4">
+          <label class="form-label">Όνομα Πελάτη</label>
+          <input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Τηλέφωνο</label>
+          <input class="form-control" name="phone" value="{{ visit.phone or '' }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Email</label>
+          <input class="form-control" name="email" value="{{ visit.email or '' }}">
         </div>
 
-        <hr class="my-3">
-
-        <div class="row g-2">
-          <div class="col-md-6">
-            <label class="form-label">Ημ/νία & Ώρα Άφιξης</label>
-            <div class="d-flex gap-2">
-              <input class="form-control" type="date" name="date_in" value="{{ (visit.date_in.strftime('%Y-%m-%d') if visit.date_in else '') }}">
-              <input class="form-control" type="time" name="time_in" value="{{ (visit.date_in.strftime('%H:%M') if visit.date_in else '') }}">
-            </div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Ημ/νία & Ώρα Παράδοσης</label>
-            <div class="d-flex gap-2">
-              <input class="form-control" type="date" name="date_out" value="{{ (visit.date_out.strftime('%Y-%m-%d') if visit.date_out else '') }}">
-              <input class="form-control" type="time" name="time_out" value="{{ (visit.date_out.strftime('%H:%M') if visit.date_out else '') }}">
-            </div>
-          </div>
-
-          <div class="col-12">
-            <label class="form-label">Απαίτηση / Σχόλια πελάτη</label>
-            <textarea class="form-control" name="customer_complaint" rows="3">{{ visit.customer_complaint or '' }}</textarea>
-          </div>
-          <div class="col-12">
-            <label class="form-label">Γενικές σημειώσεις</label>
-            <textarea class="form-control" name="notes_general" rows="3">{{ visit.notes_general or '' }}</textarea>
-          </div>
+        <div class="col-md-3">
+          <label class="form-label">Ημ/νία In</label>
+          <input class="form-control" type="date" name="date_in" id="date_in" value="{{ visit.date_in.strftime('%Y-%m-%d') if visit.date_in else '' }}">
         </div>
-      </div>
+        <div class="col-md-3">
+          <label class="form-label">Ώρα In</label>
+          <input class="form-control" type="time" name="time_in" id="time_in" value="{{ visit.date_in.strftime('%H:%M') if visit.date_in else '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Ημ/νία Out</label>
+          <input class="form-control" type="date" name="date_out" id="date_out" value="{{ visit.date_out.strftime('%Y-%m-%d') if visit.date_out else '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Ώρα Out</label>
+          <input class="form-control" type="time" name="time_out" id="time_out" value="{{ visit.date_out.strftime('%H:%M') if visit.date_out else '' }}">
+        </div>
 
-      </div>
-    </div>
-        <div class="small-muted mt-2">Αν υπάρχει ήδη στο checklist, δεν θα διπλομπεί σαν item – αλλά θα προστεθεί σαν γραμμή στην επίσκεψη.</div>
+        <div class="col-12">
+          <label class="form-label">Παράπονο / Τι θέλει ο πελάτης</label>
+          <textarea class="form-control" rows="2" name="customer_complaint">{{ visit.customer_complaint or '' }}</textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Γενικές Σημειώσεις</label>
+          <textarea class="form-control" rows="2" name="notes_general">{{ visit.notes_general or '' }}</textarea>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="col-12">
-    <div class="card">
-      <div class="card-header d-flex align-items-center">
-        <div class="fw-semibold">Checklist</div>
-        <div class="ms-auto small-muted">Tip: συμπλήρωσε Parts No για να “θυμάται” ανά Μοντέλο.</div>
-      </div>
-      <div class="card-body p-0">
-        <table class="table table-hover mb-0">
-          <thead>
-            <tr>
-              <th style="width: 26%">Κατηγορία</th>
-              <th style="width: 24%">Εργασία</th>
-              <th style="width: 10%">Status</th>
-              <th style="width: 16%">Parts No</th>
-              <th style="width: 8%">Qty</th>
-              <th>Notes</th>
-              <th style="width: 6%" class="text-center">NoPrint</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for ln in lines %}
-              {% set rid = ln.id|string %}
-              <tr>
-                <td>{{ ln.category or '' }}</td>
-                <td>{{ ln.item_name or '' }}</td>
-                <td>
-                  <select class="form-select form-select-sm" name="result_{{ rid }}">
-                    {% for opt in ['OK','CHECK','REPAIR'] %}
-                      <option value="{{ opt }}" {% if (ln.result or 'OK')|upper == opt %}selected{% endif %}>{{ opt }}</option>
-                    {% endfor %}
-                  </select>
-                </td>
-                <td>
-                  {% set memkey = (ln.category or '', ln.item_name or '') %}
-                  <input class="form-control form-control-sm mono" name="parts_code_{{ rid }}" value="{{ ln.parts_code or mem.get(memkey,'') }}" placeholder="Code">
-                </td>
-                <td><input class="form-control form-control-sm mono" name="parts_qty_{{ rid }}" value="{{ ln.parts_qty or 0 }}" style="max-width:90px"></td>
-                <td><input class="form-control form-control-sm" name="notes_{{ rid }}" value="{{ ln.notes or '' }}" placeholder="Σημείωση"></td>
-                <td class="text-center"><input class="form-check-input" type="checkbox" name="exclude_{{ rid }}" {% if ln.exclude_from_print %}checked{% endif %}></td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+  <div class="mx-auto" style="max-width: 980px;">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+      <div class="fw-semibold">Checklist</div>
+      <div class="small-muted">Στο PDF εμφανίζονται μόνο CHECK/REPAIR ή γραμμές με Qty/Parts/Notes (και όχι NoPrint).</div>
     </div>
 
-    <div class="card mt-3 no-print">
-      <div class="card-header fw-semibold">Αποστολή PDF με Email</div>
+    {% set current_cat = None %}
+    {% for ln in lines %}
+      {% if ln.category != current_cat %}
+        {% if not loop.first %}</tbody></table></div>{% endif %}
+        {% set current_cat = ln.category %}
+        <div class="card mb-3">
+          <div class="card-header d-flex align-items-center justify-content-between">
+            <div class="fw-semibold">{{ current_cat }}</div>
+            <form method="post" action="/visits/{{ visit.id }}/delete_category" onsubmit="return confirm('Να σβηστεί όλη η κατηγορία από αυτή την επίσκεψη;')" class="no-print">
+              <input type="hidden" name="category" value="{{ current_cat }}">
+              <button class="btn btn-sm btn-outline-danger">Σβήσιμο κατηγορίας</button>
+            </form>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-sm table-striped mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 220px;">Εργασία</th>
+                  <th style="width: 110px;">Result</th>
+                  <th>Notes</th>
+                  <th style="width: 140px;">Parts No</th>
+                  <th style="width: 90px;">Qty</th>
+                  <th style="width: 90px;">NoPrint</th>
+                  <th style="width: 60px;" class="no-print">Del</th>
+                </tr>
+              </thead>
+              <tbody>
+      {% endif %}
+
+      <tr>
+        <td class="align-middle">{{ ln.item_name }}</td>
+        <td class="align-middle">
+          <select class="form-select form-select-sm" name="result_{{ ln.id }}">
+            <option value="OK" {% if (ln.result or 'OK')=='OK' %}selected{% endif %}>OK</option>
+            <option value="CHECK" {% if (ln.result or '')=='CHECK' %}selected{% endif %}>CHECK</option>
+            <option value="REPAIR" {% if (ln.result or '')=='REPAIR' %}selected{% endif %}>REPAIR</option>
+          </select>
+        </td>
+        <td class="align-middle">
+          <input class="form-control form-control-sm" name="notes_{{ ln.id }}" value="{{ ln.notes or '' }}">
+        </td>
+        <td class="align-middle">
+          <input class="form-control form-control-sm" name="parts_code_{{ ln.id }}" value="{{ ln.parts_code or mem.get((ln.category, ln.item_name), '') }}">
+        </td>
+        <td class="align-middle">
+          <input class="form-control form-control-sm" style="max-width:90px" name="parts_qty_{{ ln.id }}" value="{{ ln.parts_qty or 0 }}">
+        </td>
+        <td class="align-middle text-center">
+          <input class="form-check-input" type="checkbox" name="exclude_{{ ln.id }}" {% if ln.exclude_from_print %}checked{% endif %}>
+        </td>
+        <td class="align-middle no-print">
+          <form method="post" action="/visits/{{ visit.id }}/delete_line/{{ ln.id }}" onsubmit="return confirm('Σίγουρα διαγραφή γραμμής;')">
+            <button class="btn btn-sm btn-outline-danger">×</button>
+          </form>
+        </td>
+      </tr>
+
+      {% if loop.last %}</tbody></table></div></div>{% endif %}
+    {% endfor %}
+
+    <div class="card mb-3 no-print">
+      <div class="card-header fw-semibold">Προσθήκη (Κατηγορία + Εργασία)</div>
       <div class="card-body">
-        <div class="d-flex flex-wrap gap-2 align-items-center">
-          <div>Προς: <span class="mono">{{ visit.email or '-' }}</span></div>
-          <form method="post" action="/visits/{{ visit.id }}/email" class="ms-auto">
-            <button class="btn btn-outline-success" {% if not visit.email %}disabled{% endif %}>Send Email</button>
+        <div class="small-muted mb-2">Προσθέτει νέα εργασία στο master checklist και σε αυτή την επίσκεψη, χωρίς να χαθούν τα στοιχεία πελάτη.</div>
+        <div class="d-flex flex-wrap gap-2">
+          <form method="post" action="/visits/{{ visit.id }}/add_item" class="d-flex flex-wrap gap-2 w-100">
+            <input class="form-control" style="max-width: 260px" name="new_category" placeholder="Κατηγορία">
+            <input class="form-control" style="max-width: 360px" name="new_item" placeholder="Εργασία">
+            <button class="btn btn-success">+ Προσθήκη</button>
           </form>
         </div>
-        <div class="small-muted mt-2">Απαιτούνται env vars: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM</div>
       </div>
     </div>
-  </div>
-</div>
-</form>
 
-<div class="alert alert-info mt-3">
-  <div class="fw-semibold">Τι εμφανίζει το PDF;</div>
-  <div>Μόνο γραμμές που είναι <span class="mono">CHECK</span> ή <span class="mono">REPAIR</span> ή έχουν <span class="mono">Qty &gt; 0</span> ή έχουν Parts No ή Notes, και που ΔΕΝ έχουν τικαρισμένο το NoPrint.</div>
-</div>
-
-
-<hr class="my-4">
-<div class="card p-3 mb-4">
-  <div class="fw-semibold mb-2">Προσθήκη Νέας Κατηγορίας</div>
-  <form method="post" action="/categories/add" class="d-flex flex-wrap gap-2">
-    <input class="form-control" style="max-width:320px" name="name" placeholder="Όνομα κατηγορίας (π.χ. Φρένα)">
-    <button class="btn btn-success">+ Προσθήκη</button>
-  
-
-
-    <div class="card mt-3">
-      <div class="card-header fw-semibold">Προσθήκη νέας γραμμής checklist (για αυτή την επίσκεψη)</div>
-      <div class="card-body">
-        <div class="row g-2">
-          <div class="col-6">
-            <input class="form-control" name="new_category" placeholder="Κατηγορία">
-          </div>
-          <div class="col-6">
-            <input class="form-control" name="new_item" placeholder="Εργασία">
-          </div>
-        </div>
-
-
-  <div class="card mt-3 no-print">
-    <div class="card-body d-flex flex-wrap gap-2 justify-content-end">
+    <div class="d-flex gap-2 justify-content-end no-print mb-4">
       <button class="btn btn-primary" type="submit">Αποθήκευση</button>
       <a class="btn btn-outline-secondary" href="/">Πίσω</a>
     </div>
   </div>
-
 </form>
-  <div class="small-muted mt-2">Η κατηγορία θα εμφανιστεί αμέσως στη λίστα, ακόμα κι αν δεν έχει items.</div>
-</div>
+
+<script>
+// default date/time from the user's computer if empty
+(function(){
+  function pad(n){ return String(n).padStart(2,'0'); }
+  const now = new Date();
+  const d = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+  const t = pad(now.getHours()) + ':' + pad(now.getMinutes());
+
+  const di = document.getElementById('date_in');
+  const ti = document.getElementById('time_in');
+  if (di && !di.value) di.value = d;
+  if (ti && !ti.value) ti.value = t;
+})();
+</script>
 
 {% endblock %}
-
