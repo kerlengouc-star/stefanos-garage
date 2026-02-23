@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, text, inspect
 
 from .db import SessionLocal, engine, Base
-from .models import ChecklistItem, Visit, VisitChecklistLine, PartMemory
+from .models import ChecklistCategory, ChecklistItem, Visit, VisitChecklistLine, PartMemory
 from .pdf_utils import build_jobcard_pdf
 from .email_utils import send_email_with_pdf
 
@@ -172,8 +172,7 @@ def _selected_lines(lines: List[VisitChecklistLine]) -> List[VisitChecklistLine]
 def _visit_dict(v: Visit) -> dict:
     return {
         "id": v.id,
-        "job_no": v.job_no or "",
-        "plate_number": v.plate_number or "",
+                "plate_number": v.plate_number or "",
         "vin": v.vin or "",
         "model": v.model or "",
         "km": v.km or "",
@@ -247,9 +246,7 @@ def index(request: Request, db: Session = Depends(get_db), q: str = ""):
                 Visit.phone.ilike(f"%{q}%"),
                 Visit.email.ilike(f"%{q}%"),
                 Visit.model.ilike(f"%{q}%"),
-                Visit.vin.ilike(f"%{q}%"),
-                Visit.job_no.ilike(f"%{q}%"),
-            )
+                Visit.vin.ilike(f"%{q}%"),            )
         )
     visits = visits_q.order_by(Visit.id.desc()).limit(200).all()
     return templates.TemplateResponse("index.html", {"request": request, "visits": visits, "q": q})
@@ -333,9 +330,7 @@ async def visit_save_all(
 
     form = await request.form()
 
-    # update visit fields
-    visit.job_no = (form.get("job_no") or "").strip() or None
-    visit.plate_number = (form.get("plate_number") or "").strip() or None
+    # update visit fields    visit.plate_number = (form.get("plate_number") or "").strip() or None
     visit.vin = (form.get("vin") or "").strip() or None
     visit.customer_name = (form.get("customer_name") or "").strip() or None
     visit.phone = (form.get("phone") or "").strip() or None
@@ -472,7 +467,7 @@ def visit_email(visit_id: int, db: Session = Depends(get_db)):
     selected = _selected_lines(lines)
     pdf_bytes = build_jobcard_pdf(COMPANY, _visit_dict(visit), [_line_dict(x) for x in selected])
 
-    subject = f"Job Card {visit.job_no or visit.id}"
+    subject = f"Job Card {visit.id}"
     body = "Σας επισυνάπτουμε το Job Card σε PDF.\n\nO&S STEPHANOU LTD"
     try:
         send_email_with_pdf(to_email, subject, body, pdf_bytes, filename=f"jobcard_{visit.id}.pdf")
@@ -490,6 +485,29 @@ def visit_email(visit_id: int, db: Session = Depends(get_db)):
 def checklist_admin(request: Request, db: Session = Depends(get_db)):
     items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
     return templates.TemplateResponse("checklist.html", {"request": request, "items": items})
+
+
+
+def _ensure_category(db: Session, name: str) -> None:
+    name = (name or "").strip()
+    if not name:
+        return
+    exists = db.query(ChecklistCategory).filter(ChecklistCategory.name == name).first()
+    if not exists:
+        db.add(ChecklistCategory(name=name))
+        db.commit()
+
+
+@app.post("/categories/add")
+async def categories_add(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        return RedirectResponse(url="/", status_code=302)
+    _ensure_category(db, name)
+    # επιστρέφει πίσω από όπου ήρθε (π.χ. /visits/ID ή /checklist)
+    back = request.headers.get("referer") or "/"
+    return RedirectResponse(url=back, status_code=302)
 
 @app.post("/checklist/add")
 def checklist_add(
@@ -532,9 +550,7 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
                     Visit.phone.ilike(f"%{q}%"),
                     Visit.email.ilike(f"%{q}%"),
                     Visit.model.ilike(f"%{q}%"),
-                    Visit.vin.ilike(f"%{q}%"),
-                    Visit.job_no.ilike(f"%{q}%"),
-                )
+                    Visit.vin.ilike(f"%{q}%"),                )
             )
             .order_by(Visit.id.desc())
             .limit(200)
@@ -583,9 +599,7 @@ def history_page(
                 Visit.phone.ilike(f"%{q}%"),
                 Visit.email.ilike(f"%{q}%"),
                 Visit.model.ilike(f"%{q}%"),
-                Visit.vin.ilike(f"%{q}%"),
-                Visit.job_no.ilike(f"%{q}%"),
-            )
+                Visit.vin.ilike(f"%{q}%"),            )
         )
 
     visits = qy.order_by(Visit.id.desc()).limit(500).all()
@@ -620,9 +634,7 @@ def backup_export(db: Session = Depends(get_db)):
         ],
         "visits": [
             {
-                "id": v.id,
-                "job_no": v.job_no,
-                "date_in": v.date_in.isoformat() if v.date_in else None,
+                "id": v.id,                "date_in": v.date_in.isoformat() if v.date_in else None,
                 "date_out": v.date_out.isoformat() if v.date_out else None,
                 "plate_number": v.plate_number,
                 "vin": v.vin,
@@ -705,9 +717,7 @@ async def backup_import(request: Request, db: Session = Depends(get_db), file: U
 
         id_map = {}
         for v in data.get("visits", []):
-            vv = Visit(
-                job_no=v.get("job_no"),
-                date_in=dt.datetime.fromisoformat(v["date_in"]) if v.get("date_in") else None,
+            vv = Visit(                date_in=dt.datetime.fromisoformat(v["date_in"]) if v.get("date_in") else None,
                 date_out=dt.datetime.fromisoformat(v["date_out"]) if v.get("date_out") else None,
                 plate_number=v.get("plate_number"),
                 vin=v.get("vin"),

@@ -21,8 +21,7 @@
         {% for v in results %}
         <tr>
           <td class="mono">{{ v.id }}</td>
-          <td class="mono">{{ v.job_no or '' }}</td>
-          <td>{{ v.customer_name or '' }}</td>
+<td>{{ v.customer_name or '' }}</td>
           <td class="mono">{{ v.plate_number or '' }}</td>
           <td class="mono">{{ v.phone or '' }}</td>
           <td class="mono">{{ (v.date_in.strftime('%d/%m/%Y %H:%M') if v.date_in else '') }}</td>

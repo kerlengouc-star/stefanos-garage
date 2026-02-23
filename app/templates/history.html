@@ -27,15 +27,14 @@
     <table class="table table-striped mb-0">
       <thead>
         <tr>
-          <th>ID</th><th>Job</th><th>Πελάτης</th><th>Πινακίδα</th><th>Άφιξη</th><th>Παράδοση</th><th></th>
+          <th>ID</th><th>Πελάτης</th><th>Πινακίδα</th><th>Άφιξη</th><th>Παράδοση</th><th></th>
         </tr>
       </thead>
       <tbody>
         {% for v in visits %}
         <tr>
           <td class="mono">{{ v.id }}</td>
-          <td class="mono">{{ v.job_no or '' }}</td>
-          <td>{{ v.customer_name or '' }}</td>
+<td>{{ v.customer_name or '' }}</td>
           <td class="mono">{{ v.plate_number or '' }}</td>
           <td class="mono">{{ (v.date_in.strftime('%d/%m/%Y %H:%M') if v.date_in else '') }}</td>
           <td class="mono">{{ (v.date_out.strftime('%d/%m/%Y %H:%M') if v.date_out else '') }}</td>

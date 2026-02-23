@@ -26,11 +26,7 @@
       
       <div class="card-body">
         <div class="row g-2">
-          <div class="col-md-3">
-            <label class="form-label">Job No</label>
-            <input class="form-control" name="job_no" value="{{ visit.job_no or '' }}">
-          </div>
-          <div class="col-md-3">
+<div class="col-md-3">
             <label class="form-label">Πινακίδα</label>
             <input class="form-control" name="plate_number" value="{{ visit.plate_number or '' }}">
           </div>
@@ -185,4 +181,17 @@
   <div class="fw-semibold">Τι εμφανίζει το PDF;</div>
   <div>Μόνο γραμμές που είναι <span class="mono">CHECK</span> ή <span class="mono">REPAIR</span> ή έχουν <span class="mono">Qty &gt; 0</span> ή έχουν Parts No ή Notes, και που ΔΕΝ έχουν τικαρισμένο το NoPrint.</div>
 </div>
+
+
+<hr class="my-4">
+<div class="card p-3 mb-4">
+  <div class="fw-semibold mb-2">Προσθήκη Νέας Κατηγορίας</div>
+  <form method="post" action="/categories/add" class="d-flex flex-wrap gap-2">
+    <input class="form-control" style="max-width:320px" name="name" placeholder="Όνομα κατηγορίας (π.χ. Φρένα)">
+    <button class="btn btn-success">+ Προσθήκη</button>
+  </form>
+  <div class="small-muted mt-2">Η κατηγορία θα εμφανιστεί αμέσως στη λίστα, ακόμα κι αν δεν έχει items.</div>
+</div>
+
 {% endblock %}
+
