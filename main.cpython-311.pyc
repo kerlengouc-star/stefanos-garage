@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+  <div>
+    <h2 style="margin:0;">Επίσκεψη #{{ visit.id }}</h2>
+    <div style="color:#666; font-size:13px;">Job No: {{ visit.job_no or "-" }}</div>
+  </div>
+
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <form action="/visits/{{ visit.id }}/save_all" method="post" id="saveTopForm">
+      <!-- αυτό το κουμπί πατάει submit στο κύριο form (κάτω) -->
+      <button type="button" onclick="document.getElementById('mainForm').submit();" style="padding:8px 12px;">💾 Save</button>
+    </form>
+
+    <a href="/visits/{{ visit.id }}/pdf" style="padding:8px 12px; border:1px solid #ccc; border-radius:6px; text-decoration:none;">📄 PDF</a>
+    <a href="/visits/{{ visit.id }}/print" target="_blank" style="padding:8px 12px; border:1px solid #ccc; border-radius:6px; text-decoration:none;">🖨️ Print</a>
+
+    <form action="/visits/{{ visit.id }}/email" method="post" style="margin:0;">
+      <button type="submit" style="padding:8px 12px;">✉️ Email</button>
+    </form>
+
+    <a href="/history" style="padding:8px 12px; border:1px solid #ccc; border-radius:6px; text-decoration:none;">🕘 Ιστορικό</a>
+    <a href="/" style="padding:8px 12px; border:1px solid #ccc; border-radius:6px; text-decoration:none;">⬅️ Πίσω</a>
+  </div>
+</div>
+
+{% if request.query_params.get('email_sent') %}
+  <div style="margin-top:10px; padding:10px; background:#e7ffe7; border:1px solid #bde5bd; border-radius:8px;">✅ Το email στάλθηκε.</div>
+{% endif %}
+{% if request.query_params.get('email_error') %}
+  <div style="margin-top:10px; padding:10px; background:#ffe7e7; border:1px solid #e5bdbd; border-radius:8px;">⚠️ Πρόβλημα στην αποστολή email (έλεγξε SMTP settings στο Render).</div>
+{% endif %}
+
+<form id="mainForm" action="/visits/{{ visit.id }}/save_all" method="post" style="margin-top:14px;">
+  <div class="card" style="padding:12px;">
+    <h3 style="margin-top:0;">Στοιχεία Πελάτη / Οχήματος</h3>
+
+    <div style="display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:10px;">
+      <div>
+        <label>Αρ. Εγγραφής (Job No)</label>
+        <input name="job_no" value="{{ visit.job_no or '' }}" />
+      </div>
+      <div>
+        <label>Αρ. Εγγραφής (Plate)</label>
+        <input name="plate_number" value="{{ visit.plate_number or '' }}" />
+      </div>
+      <div>
+        <label>Αρ. Πλαισίου (VIN)</label>
+        <input name="vin" value="{{ visit.vin or '' }}" />
+      </div>
+      <div>
+        <label>Μοντέλο</label>
+        <input name="model" value="{{ visit.model or '' }}" />
+      </div>
+
+      <div>
+        <label>Όνομα</label>
+        <input name="customer_name" value="{{ visit.customer_name or '' }}" />
+      </div>
+      <div>
+        <label>Τηλέφωνο</label>
+        <input name="phone" value="{{ visit.phone or '' }}" />
+      </div>
+      <div>
+        <label>Email</label>
+        <input name="email" value="{{ visit.email or '' }}" />
+      </div>
+      <div>
+        <label>KM/H</label>
+        <input name="km" value="{{ visit.km or '' }}" />
+      </div>
+
+      <div>
+        <label>Ημερομηνία Παραλαβής</label>
+        <input type="date" id="date_in" name="date_in" value="{{ visit.date_in.date().isoformat() if visit.date_in else '' }}" />
+      </div>
+      <div>
+        <label>Ώρα Παραλαβής</label>
+        <input type="time" id="time_in" name="time_in" value="{{ visit.date_in.strftime('%H:%M') if visit.date_in else '' }}" />
+      </div>
+      <div>
+        <label>Ημερομηνία Παράδοσης</label>
+        <input type="date" id="date_out" name="date_out" value="{{ visit.date_out.date().isoformat() if visit.date_out else '' }}" />
+      </div>
+      <div>
+        <label>Ώρα Παράδοσης</label>
+        <input type="time" id="time_out" name="time_out" value="{{ visit.date_out.strftime('%H:%M') if visit.date_out else '' }}" />
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+      <div>
+        <label>Απαίτηση πελάτη</label>
+        <textarea name="customer_complaint" rows="3">{{ visit.customer_complaint or '' }}</textarea>
+      </div>
+      <div>
+        <label>Σημειώσεις</label>
+        <textarea name="notes_general" rows="3">{{ visit.notes_general or '' }}</textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:12px; margin-top:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+      <h3 style="margin:0;">Checklist</h3>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <label style="font-size:13px; color:#666;">Προβολή:</label>
+        <a href="/visits/{{ visit.id }}?mode=all" style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; text-decoration:none;">Όλα</a>
+        <a href="/visits/{{ visit.id }}?mode=selected" style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; text-decoration:none;">Μόνο επιλεγμένα</a>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <label style="font-size:13px; color:#666;">Φίλτρο κατηγορίας</label>
+      <select id="catFilter" style="max-width:420px;">
+        <option value="">Όλες</option>
+        {% set cats = [] %}
+        {% for ln in all_lines %}
+          {% if ln.category not in cats %}
+            {% set _ = cats.append(ln.category) %}
+          {% endif %}
+        {% endfor %}
+        {% for c in cats %}
+          <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div id="checklistWrap" style="margin-top:12px;">
+      {% set current = None %}
+      {% for ln in lines %}
+        {% if current != ln.category %}
+          {% set current = ln.category %}
+          <h4 class="catTitle" data-cat="{{ ln.category }}" style="margin-top:18px; padding-top:8px; border-top:1px dashed #ddd;">{{ ln.category }}</h4>
+        {% endif %}
+
+        {% set memkey = (ln.category, ln.item_name) %}
+        {% set memcode = mem.get(memkey) if mem else None %}
+
+        <div class="lineRow" data-cat="{{ ln.category }}" style="display:grid; grid-template-columns: 2fr 110px 1fr 1fr 1.5fr 50px; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f0f0f0;">
+          <div style="font-weight:600;">{{ ln.item_name }}</div>
+
+          <div>
+            <select name="result_{{ ln.id }}">
+              <option value="OK" {% if (ln.result or '') == 'OK' %}selected{% endif %}>OK</option>
+              <option value="CHECK" {% if (ln.result or '') == 'CHECK' %}selected{% endif %}>CHECK</option>
+              <option value="REPAIR" {% if (ln.result or '') == 'REPAIR' %}selected{% endif %}>REPAIR</option>
+            </select>
+          </div>
+
+          <div>
+            <input name="parts_code_{{ ln.id }}" placeholder="Κωδικός εξαρτήματος" value="{{ ln.parts_code or memcode or '' }}" />
+          </div>
+
+          <div>
+            <input name="parts_qty_{{ ln.id }}" type="number" min="0" step="1" placeholder="Ποσότητα" value="{{ ln.parts_qty or 0 }}" />
+          </div>
+
+          <div>
+            <input name="notes_{{ ln.id }}" placeholder="Σημείωση" value="{{ ln.notes or '' }}" />
+          </div>
+
+          <div style="text-align:center;">
+            <input name="exclude_{{ ln.id }}" type="checkbox" {% if ln.exclude_from_print %}checked{% endif %} title="Εξαίρεση από PDF/Print" />
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+      <div>
+        <label>Νέα Κατηγορία</label>
+        <input name="new_category" placeholder="π.χ. ΦΡΕΝΑ" />
+      </div>
+      <div>
+        <label>Νέα Εργασία</label>
+        <input name="new_item" placeholder="π.χ. Τακάκια μπροστά" />
+      </div>
+      <div>
+        <button type="submit" style="padding:10px 14px;">➕ Προσθήκη & Save</button>
+      </div>
+      <div style="margin-left:auto;">
+        <button type="submit" style="padding:10px 14px;">💾 Save Όλα</button>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script>
+(function(){
+  // Browser time -> αν είναι άδειο, βάλε τοπική ώρα υπολογιστή
+  function pad(n){ return (n<10? '0':'')+n; }
+  const now = new Date();
+  const d = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate());
+  const t = pad(now.getHours()) + ":" + pad(now.getMinutes());
+
+  const di = document.getElementById('date_in');
+  const ti = document.getElementById('time_in');
+  if(di && !di.value) di.value = d;
+  if(ti && !ti.value) ti.value = t;
+
+  // Category filter
+  const sel = document.getElementById('catFilter');
+  function applyFilter(){
+    const v = sel.value;
+    document.querySelectorAll('.lineRow').forEach(el=>{
+      if(!v || el.dataset.cat===v) el.style.display='';
+      else el.style.display='none';
+    });
+    document.querySelectorAll('.catTitle').forEach(el=>{
+      if(!v || el.dataset.cat===v) el.style.display='';
+      else el.style.display='none';
+    });
+  }
+  if(sel){
+    sel.addEventListener('change', applyFilter);
+    applyFilter();
+  }
+
+  // Preserve scroll after save
+  window.addEventListener('beforeunload', ()=>{ sessionStorage.setItem('scrollY', window.scrollY); });
+  const y = sessionStorage.getItem('scrollY');
+  if(y){ window.scrollTo(0, parseInt(y,10)); sessionStorage.removeItem('scrollY'); }
+})();
+</script>
+{% endblock %}

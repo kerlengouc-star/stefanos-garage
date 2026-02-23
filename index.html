@@ -17,6 +17,7 @@ def send_email_with_pdf(to_email: str, subject: str, body: str, pdf_bytes: bytes
     msg["To"] = to_email
     msg["Subject"] = subject
     msg.set_content(body)
+
     msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
 
     with smtplib.SMTP(host, port) as s:
