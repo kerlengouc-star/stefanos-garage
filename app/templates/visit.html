@@ -41,6 +41,32 @@
   </div>
 </div>
 
+<!-- ✅ Επιλογή κατηγοριών (μόνο εμφάνιση, δεν πειράζει DB) -->
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center">
+      <div class="fw-semibold">Επιλογή Κατηγοριών για εμφάνιση</div>
+      <button class="btn btn-outline-secondary btn-sm" type="button" onclick="applyCats()">Εφαρμογή</button>
+    </div>
+
+    <div class="row g-2 mt-2">
+      {% for c in categories %}
+        <div class="col-md-3 col-6">
+          <label class="form-check-label d-flex gap-2 align-items-center">
+            <input class="form-check-input catbox" type="checkbox" value="{{ c }}"
+                   {% if (selected_cats and c in selected_cats) or (not selected_cats) %}checked{% endif %}>
+            <span>{{ c }}</span>
+          </label>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="text-muted small mt-2">
+      Αν δεν επιλέξεις τίποτα, εμφανίζονται όλες οι κατηγορίες.
+    </div>
+  </div>
+</div>
+
 <form id="visitForm" method="post" action="/visits/{{ visit.id }}/save_all" autocomplete="off">
   <input type="hidden" name="mode" value="{{ mode }}">
   <input type="hidden" name="action" value="">
@@ -95,7 +121,7 @@
         </div>
         <div class="col-md-4">
           <label class="form-label">Μοντέλο</label>
-          <input class="form-control" name="model" value="{{ visit.model or '' }}" autocomplete="off">
+          <input class="form-control" name="model" value="{{ visit.model or '' }}" autocomplete="off" placeholder="π.χ. Range Rover">
         </div>
         <div class="col-md-2">
           <label class="form-label">KM</label>
@@ -147,8 +173,7 @@
                    name="parts_code_{{ ln.id }}"
                    id="parts_code_{{ ln.id }}"
                    value="{{ ln.parts_code or '' }}"
-                   autocomplete="off"
-                   placeholder="π.χ. 12345-ABC">
+                   autocomplete="off">
           </div>
 
           <div class="col-md-1">
@@ -168,8 +193,7 @@
                    name="notes_{{ ln.id }}"
                    id="notes_{{ ln.id }}"
                    value="{{ ln.notes or '' }}"
-                   autocomplete="off"
-                   placeholder="Σημείωση...">
+                   autocomplete="off">
           </div>
 
           <div class="col-md-1">
@@ -225,7 +249,7 @@
 
 <script>
 (function() {
-  // ✅ Πάρε ώρα/ημερομηνία από τον υπολογιστή (browser) ΜΟΝΟ αν είναι άδεια
+  // ✅ ώρα/ημερομηνία από τον υπολογιστή (browser) μόνο αν είναι άδεια
   const d = document.getElementById("date_in_date");
   const t = document.getElementById("date_in_time");
   if (d && t) {
@@ -241,6 +265,20 @@
     }
   }
 })();
+
+function applyCats() {
+  const boxes = Array.from(document.querySelectorAll(".catbox"));
+  const selected = boxes.filter(b => b.checked).map(b => b.value);
+
+  // αν όλα τσεκαρισμένα ή κανένα -> δείξε όλα
+  const allCount = boxes.length;
+  if (selected.length === 0 || selected.length === allCount) {
+    window.location = `/visits/{{ visit.id }}?mode={{ mode }}`;
+    return;
+  }
+  const cats = encodeURIComponent(selected.join(","));
+  window.location = `/visits/{{ visit.id }}?mode={{ mode }}&cats=${cats}`;
+}
 </script>
 
 {% endblock %}
