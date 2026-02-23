@@ -96,13 +96,9 @@
         <div class="card mb-3">
           <div class="card-header d-flex align-items-center justify-content-between">
             <div class="fw-semibold">{{ current_cat }}</div>
-            <form method="post" action="/visits/{{ visit.id }}/delete_category" onsubmit="return confirm('Να σβηστεί όλη η κατηγορία από αυτή την επίσκεψη;')" class="no-print">
-              <input type="hidden" name="category" value="{{ current_cat }}">
-              <button class="btn btn-sm btn-outline-danger">Σβήσιμο κατηγορίας</button>
-            </form>
           </div>
           <div class="card-body p-0">
-            <table class="table table-sm table-striped mb-0">
+            <table class="table table-sm  mb-0">
               <thead>
                 <tr>
                   <th style="width: 220px;">Εργασία</th>
@@ -172,75 +168,55 @@
 </form>
 
 <script>
-// default date/time from the user's computer if empty
 (function(){
+  // default date/time from the user's computer if empty
   function pad(n){ return String(n).padStart(2,'0'); }
-  const now = new Date();
-  const d = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
-  const t = pad(now.getHours()) + ':' + pad(now.getMinutes());
-
-  const di = document.getElementById('date_in');
-  const ti = document.getElementById('time_in');
-  if (di && !di.value) di.value = d;
-  if (ti && !ti.value) ti.value = t;
-})();
-</script>
-
-{% endblock %}
-
-<script>
-(function() {
-  const visitForm = document.getElementById('visit-form');
-  const addForm = document.getElementById('add-item-form');
-
-  function setNowIfEmpty(dateEl, timeEl) {
-    if (!dateEl || !timeEl) return;
-    if (dateEl.value && timeEl.value) return;
+  function setNowIfEmpty(){
     const now = new Date();
-    const pad = (n) => String(n).padStart(2,'0');
-    if (!dateEl.value) dateEl.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-    if (!timeEl.value) timeEl.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const d = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+    const t = pad(now.getHours()) + ':' + pad(now.getMinutes());
+    const di = document.getElementById('date_in');
+    const ti = document.getElementById('time_in');
+    if (di && !di.value) di.value = d;
+    if (ti && !ti.value) ti.value = t;
+  }
+  setNowIfEmpty();
+
+  async function postForm(url, formEl){
+    const fd = new FormData(formEl);
+    const res = await fetch(url, {
+      method: 'POST',
+      body: fd,
+      headers: {'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json'}
+    });
+    return res;
   }
 
-  // Set local computer time on load if empty
-  setNowIfEmpty(document.querySelector('input[name="date_in"]'), document.querySelector('input[name="time_in"]'));
-  // Optional: set out time if empty AND date_out filled
-  // setNowIfEmpty(document.querySelector('input[name="date_out"]'), document.querySelector('input[name="time_out"]'));
-
-  if (addForm && visitForm) {
-    addForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const cat = addForm.querySelector('input[name="new_category"]')?.value?.trim();
-      const item = addForm.querySelector('input[name="new_item"]')?.value?.trim();
-      if (!cat || !item) return;
-
-      // 1) Save current visit form (so customer details & selections won't be lost)
-      try {
-        const fd1 = new FormData(visitForm);
-        await fetch(visitForm.action, {
-          method: 'POST',
-          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-          body: fd1
-        });
-      } catch (err) {
-        console.error('Save failed', err);
+  const addForm = document.getElementById('add-item-form');
+  const visitForm = document.getElementById('visit-form');
+  if (addForm && visitForm){
+    addForm.addEventListener('submit', async function(ev){
+      ev.preventDefault();
+      // 1) save all current visit fields first (so nothing is lost)
+      try{
+        await postForm(visitForm.action, visitForm);
+      }catch(e){
+        alert('Δεν μπόρεσα να αποθηκεύσω τα στοιχεία πριν την προσθήκη.');
+        return;
       }
-
-      // 2) Add new item
-      try {
-        const fd2 = new FormData(addForm);
-        await fetch(addForm.action, {
-          method: 'POST',
-          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-          body: fd2
-        });
-      } catch (err) {
-        console.error('Add item failed', err);
+      // 2) add item
+      try{
+        const res = await postForm(addForm.action, addForm);
+        if(!res.ok){
+          alert('Σφάλμα στην προσθήκη item.');
+          return;
+        }
+      }catch(e){
+        alert('Σφάλμα στην προσθήκη item.');
+        return;
       }
-
-      // 3) Reload same page (now data is saved)
-      window.location.href = window.location.pathname + window.location.search + '#checklist';
+      // 3) reload same page (now saved) to show the new line
+      window.location.href = window.location.href.split('#')[0];
     });
   }
 })();

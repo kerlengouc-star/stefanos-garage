@@ -257,7 +257,7 @@ def index(request: Request, db: Session = Depends(get_db), q: str = ""):
 # =========================
 @app.post("/visits/new")
 def visit_new(db: Session = Depends(get_db)):
-    v = Visit(date_in=dt.datetime.now())
+    v = Visit()
     db.add(v)
     db.commit()
     db.refresh(v)
