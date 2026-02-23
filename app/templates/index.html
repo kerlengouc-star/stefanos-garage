@@ -8,18 +8,20 @@
       <!-- Backup export -->
       <a class="btn btn-outline-primary btn-sm" href="/backup">Backup</a>
 
-      <!-- Import backup (χωρίς να φαίνεται Browse...) -->
+      <!-- Import backup (δέχεται μόνο JSON) -->
       <form action="/backup/import" method="post" enctype="multipart/form-data" style="display:inline;">
-        <input type="file" name="file" id="backupFile" style="display:none;" onchange="this.form.submit()">
+        <input type="file" name="file" id="backupFile" style="display:none;" accept=".json,application/json"
+               onchange="this.form.submit()">
         <button type="button" class="btn btn-outline-primary btn-sm"
                 onclick="document.getElementById('backupFile').click()">
           Import Backup
         </button>
       </form>
 
-      <!-- Reset tests -->
-      <form action="/reset" method="post" style="display:inline;">
+      <!-- Reset tests (με κωδικό) -->
+      <form action="/reset" method="post" style="display:inline;" onsubmit="return askResetPass();">
         <input type="hidden" name="keep_master" value="1">
+        <input type="hidden" name="reset_password" id="reset_password">
         <button class="btn btn-outline-danger btn-sm" type="submit">Reset Tests</button>
       </form>
 
@@ -89,5 +91,18 @@
     </div>
   </div>
 </div>
+
+<script>
+  function askResetPass(){
+    const pass = prompt("Βάλε κωδικό για Reset Tests:");
+    if(pass === null) return false; // cancel
+    document.getElementById("reset_password").value = pass.trim();
+    if(!pass.trim()){
+      alert("Ο κωδικός είναι υποχρεωτικός.");
+      return false;
+    }
+    return confirm("Είσαι σίγουρος; Θα σβηστούν ΟΛΑ τα test δεδομένα.");
+  }
+</script>
 
 {% endblock %}
