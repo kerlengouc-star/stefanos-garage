@@ -4,7 +4,7 @@ import traceback
 from datetime import datetime
 from typing import Optional, Dict, Tuple, List
 
-from fastapi import FastAPI, Request, Depends, Response, UploadFile, File, Form
+from fastapi import FastAPI, Request, Depends, Response, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 
 from sqlalchemy.orm import Session
@@ -73,6 +73,7 @@ def seed_master_if_empty(db: Session):
 def startup():
     Base.metadata.create_all(bind=engine)
 
+    # make sure needed columns exist (sqlite ALTERs are safe in try)
     try:
         with engine.connect() as conn:
             cols = conn.execute(text("PRAGMA table_info(visit_checklist_lines)")).fetchall()
@@ -150,21 +151,12 @@ def __ping():
     return {"ok": True, "where": "app/main.py"}
 
 
+# ---------------------------
+# BACKUP (EXPORT)
+# ---------------------------
 @app.get("/backup")
 def backup_export(db: Session = Depends(get_db)):
-    sqlite_path = _sqlite_db_file_path()
-    now = datetime.now().strftime("%Y-%m-%d_%H%M")
-
-    if sqlite_path and os.path.exists(sqlite_path):
-        with open(sqlite_path, "rb") as f:
-            data = f.read()
-        filename = f"stephanou_backup_{now}.db"
-        return Response(
-            content=data,
-            media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-
+    # Prefer JSON export (safe + portable)
     visits = db.query(Visit).order_by(Visit.id.asc()).all()
     lines = db.query(VisitChecklistLine).order_by(VisitChecklistLine.id.asc()).all()
     items = db.query(ChecklistItem).order_by(ChecklistItem.id.asc()).all()
@@ -222,6 +214,7 @@ def backup_export(db: Session = Depends(get_db)):
     }
 
     data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    now = datetime.now().strftime("%Y-%m-%d_%H%M")
     filename = f"stephanou_backup_{now}.json"
     return Response(
         content=data,
@@ -230,19 +223,23 @@ def backup_export(db: Session = Depends(get_db)):
     )
 
 
+# ---------------------------
+# BACKUP (IMPORT JSON)
+# ---------------------------
 @app.post("/backup/import")
 async def backup_import(file: UploadFile = File(...), db: Session = Depends(get_db)):
     filename = (file.filename or "").lower()
     data = await file.read()
 
-    if filename.endswith(".db"):
-        return PlainTextResponse("Import .db δεν υποστηρίζεται. Χρησιμοποίησε JSON backup.", status_code=400)
+    if not filename.endswith(".json"):
+        return PlainTextResponse("Import επιτρέπεται μόνο για JSON backup (.json).", status_code=400)
 
     try:
         payload = json.loads(data.decode("utf-8"))
     except Exception:
         return PlainTextResponse("Το αρχείο δεν είναι έγκυρο JSON.", status_code=400)
 
+    # clear visits + lines
     db.query(VisitChecklistLine).delete()
     db.query(Visit).delete()
 
@@ -287,24 +284,43 @@ async def backup_import(file: UploadFile = File(...), db: Session = Depends(get_
         )
         db.add(nln)
 
+    # restore memories (optional)
     db.query(PartMemory).delete()
     for m in payload.get("part_memories", []):
-        nm = PartMemory(
-            model_key=(m.get("model_key") or "").strip().lower(),
-            category=(m.get("category") or "").strip(),
-            item_name=(m.get("item_name") or "").strip(),
-            parts_code=(m.get("parts_code") or "").strip(),
-            updated_at=datetime.fromisoformat(m["updated_at"]) if m.get("updated_at") else datetime.utcnow(),
-        )
-        if nm.model_key and nm.category and nm.item_name and nm.parts_code:
-            db.add(nm)
+        mk = (m.get("model_key") or "").strip().lower()
+        cat = (m.get("category") or "").strip()
+        nm = (m.get("item_name") or "").strip()
+        pc = (m.get("parts_code") or "").strip()
+        if mk and cat and nm and pc:
+            nmobj = PartMemory(
+                model_key=mk,
+                category=cat,
+                item_name=nm,
+                parts_code=pc,
+                updated_at=datetime.fromisoformat(m["updated_at"]) if m.get("updated_at") else datetime.utcnow(),
+            )
+            db.add(nmobj)
 
     db.commit()
     return RedirectResponse("/", status_code=302)
 
 
+# ---------------------------
+# RESET (SECURE)
+# ---------------------------
 @app.post("/reset")
-async def reset_data(keep_master: str = Form("1"), db: Session = Depends(get_db)):
+async def reset_data(
+    reset_password: str = Form(""),
+    keep_master: str = Form("1"),
+    db: Session = Depends(get_db),
+):
+    expected = (os.getenv("RESET_PASSWORD") or "").strip()
+    if not expected:
+        raise HTTPException(status_code=403, detail="Reset disabled: RESET_PASSWORD is not set.")
+
+    if (reset_password or "").strip() != expected:
+        raise HTTPException(status_code=403, detail="Λάθος κωδικός για Reset.")
+
     db.query(VisitChecklistLine).delete()
     db.query(Visit).delete()
 
@@ -316,6 +332,9 @@ async def reset_data(keep_master: str = Form("1"), db: Session = Depends(get_db)
     return RedirectResponse("/", status_code=302)
 
 
+# ---------------------------
+# PAGES
+# ---------------------------
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, q: str = "", db: Session = Depends(get_db)):
     seed_master_if_empty(db)
@@ -606,7 +625,6 @@ async def checklist_delete(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse("/checklist", status_code=302)
 
 
-# ✅ ΙΣΤΟΡΙΚΟ
 @app.get("/history", response_class=HTMLResponse)
 def history(request: Request, from_date: str = "", to_date: str = "", q: str = "", db: Session = Depends(get_db)):
     query = db.query(Visit)
