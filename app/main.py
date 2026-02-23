@@ -73,7 +73,7 @@ def seed_master_if_empty(db: Session):
 def startup():
     Base.metadata.create_all(bind=engine)
 
-    # make sure needed columns exist (sqlite ALTERs are safe in try)
+    # ensure needed columns exist (sqlite ALTERs are safe in try)
     try:
         with engine.connect() as conn:
             cols = conn.execute(text("PRAGMA table_info(visit_checklist_lines)")).fetchall()
@@ -132,20 +132,6 @@ def printable_lines(db: Session, visit_id: int):
     return [ln for ln in lines if is_selected_line(ln)]
 
 
-def _sqlite_db_file_path() -> Optional[str]:
-    try:
-        if engine.url.get_backend_name() != "sqlite":
-            return None
-        dbname = engine.url.database
-        if not dbname or dbname == ":memory:":
-            return None
-        if os.path.isabs(dbname):
-            return dbname
-        return os.path.abspath(dbname)
-    except Exception:
-        return None
-
-
 @app.get("/__ping")
 def __ping():
     return {"ok": True, "where": "app/main.py"}
@@ -156,7 +142,7 @@ def __ping():
 # ---------------------------
 @app.get("/backup")
 def backup_export(db: Session = Depends(get_db)):
-    # Prefer JSON export (safe + portable)
+    # JSON export (safe + portable)
     visits = db.query(Visit).order_by(Visit.id.asc()).all()
     lines = db.query(VisitChecklistLine).order_by(VisitChecklistLine.id.asc()).all()
     items = db.query(ChecklistItem).order_by(ChecklistItem.id.asc()).all()
@@ -239,7 +225,6 @@ async def backup_import(file: UploadFile = File(...), db: Session = Depends(get_
     except Exception:
         return PlainTextResponse("Το αρχείο δεν είναι έγκυρο JSON.", status_code=400)
 
-    # clear visits + lines
     db.query(VisitChecklistLine).delete()
     db.query(Visit).delete()
 
@@ -284,7 +269,6 @@ async def backup_import(file: UploadFile = File(...), db: Session = Depends(get_
         )
         db.add(nln)
 
-    # restore memories (optional)
     db.query(PartMemory).delete()
     for m in payload.get("part_memories", []):
         mk = (m.get("model_key") or "").strip().lower()
@@ -306,7 +290,7 @@ async def backup_import(file: UploadFile = File(...), db: Session = Depends(get_
 
 
 # ---------------------------
-# RESET (SECURE)
+# RESET (SECURE + HARD DELETE)
 # ---------------------------
 @app.post("/reset")
 async def reset_data(
@@ -321,14 +305,25 @@ async def reset_data(
     if (reset_password or "").strip() != expected:
         raise HTTPException(status_code=403, detail="Λάθος κωδικός για Reset.")
 
-    db.query(VisitChecklistLine).delete()
-    db.query(Visit).delete()
+    # Για να μην κρατάει τίποτα cached
+    try:
+        db.rollback()
+    except Exception:
+        pass
+    try:
+        db.close()
+    except Exception:
+        pass
 
-    if keep_master.strip() == "0":
-        db.query(PartMemory).delete()
-        db.query(ChecklistItem).delete()
+    # ΣΙΓΟΥΡΟ reset: απευθείας SQL στη βάση
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM visit_checklist_lines"))
+        conn.execute(text("DELETE FROM visits"))
 
-    db.commit()
+        if keep_master.strip() == "0":
+            conn.execute(text("DELETE FROM part_memories"))
+            conn.execute(text("DELETE FROM checklist_items"))
+
     return RedirectResponse("/", status_code=302)
 
 
