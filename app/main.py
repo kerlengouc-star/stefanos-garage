@@ -43,18 +43,73 @@ def get_db():
     finally:
         db.close()
 
+# =========================
+# DEFAULT CHECKLIST SEED ✅
+# =========================
+DEFAULT_CATEGORY = "ΒΑΣΙΚΑ ΣΤΟΙΧΕΙΑ ΟΧΗΜΑΤΟΣ"
+
+DEFAULT_ITEMS = [
+    "Γενικό Σέρβις",
+    "Στοπερ μπροστά",
+    "Στοπερ πίσω",
+    "Φλάντζες μπροστά",
+    "Φλάντζες πίσω",
+    "Χειρόφρενο",
+    "Λάδι μηχανής",
+    "Λάδι gearbox",
+    "Clutch",
+    "Oilcooler",
+    "Starter",
+    "Δυναμός",
+    "Αξονάκια",
+    "Αέριο A/C",
+    "Θερμοκρασία",
+    "Καθαριστήρες",
+    "Λάμπες",
+    "Κολάνι",
+    "Κόντρα σούστες μπροστά",
+    "Κόντρα σούστες πίσω",
+    "Λάστιχα",
+    "Γύρισμα ελαστικών",
+    "Μπαταρία",
+    "Μπίτε καθαριστήρων",
+    "Κόντρα σούστες καπό μπροστά",
+    "Κόντρα σούστες καπό πίσω",
+]
+
+def seed_checklist_if_empty(db: Session):
+    """Βάζει τις default κατηγορίες ΜΟΝΟ αν δεν υπάρχει τίποτα στη βάση."""
+    try:
+        cnt = db.query(ChecklistItem).count()
+    except Exception:
+        cnt = 0
+
+    if cnt and cnt > 0:
+        return
+
+    for name in DEFAULT_ITEMS:
+        db.add(ChecklistItem(category=DEFAULT_CATEGORY, name=name))
+    db.commit()
+
 @app.on_event("startup")
 def on_startup():
     # Δημιουργία πινάκων (fix "no such table")
     Base.metadata.create_all(bind=engine)
 
+    # Seed κατηγοριών αν η βάση είναι άδεια ✅
+    db = SessionLocal()
+    try:
+        seed_checklist_if_empty(db)
+    finally:
+        db.close()
+
 # =========================
-# AUTH (κρατάμε dummy – δεν σπάει τίποτα)
+# AUTH (dummy – δεν σπάει)
 # =========================
 HAS_USER = False
 
 def require_user(request: Request, db: Session) -> Optional[Any]:
-    return {"ok": True}  # dummy user
+    return {"ok": True}
 
 # =========================
 # HEALTH / DEBUG
@@ -69,6 +124,7 @@ def __dbinfo(db: Session = Depends(get_db)):
         "driver": getattr(engine.url, "drivername", "unknown"),
         "database_url": str(engine.url),
         "visits_count": db.query(Visit).count(),
+        "checklist_count": db.query(ChecklistItem).count(),
     }
 
 @app.get("/__tables")
@@ -93,7 +149,7 @@ def index(request: Request, db: Session = Depends(get_db)):
     visits = db.query(Visit).order_by(Visit.id.desc()).limit(200).all()
     return templates.TemplateResponse("index.html", {"request": request, "user": u, "visits": visits})
 
-# ✅ FIX: δέχεται ΚΑΙ GET ΚΑΙ POST (για να μην βγάζει Method Not Allowed)
+# ✅ FIX: δέχεται ΚΑΙ GET ΚΑΙ POST
 @app.api_route("/visits/new", methods=["GET", "POST"])
 def visit_new(request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
@@ -107,7 +163,6 @@ def visit_new(request: Request, db: Session = Depends(get_db)):
     if hasattr(v, "time_in"):
         setattr(v, "time_in", now.strftime("%H:%M"))
 
-    # default status
     if hasattr(v, "status") and not getattr(v, "status", None):
         setattr(v, "status", "open")
 
@@ -147,7 +202,7 @@ def visit_view(visit_id: int, request: Request, db: Session = Depends(get_db)):
     )
 
 # =========================
-# SAVE ALL (ένα Save μόνο)
+# SAVE ALL
 # =========================
 @app.api_route("/visits/{visit_id}/save_all", methods=["POST"])
 async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
@@ -163,7 +218,6 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
         if hasattr(visit, field):
             setattr(visit, field, val)
 
-    # βασικά πεδία (ασφαλές: μόνο αν υπάρχουν)
     field_map = {
         "job_no": "job_no",
         "plate_number": "plate_number",
@@ -173,7 +227,6 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
         "email": "email",
         "model": "model",
         "km": "km",
-        # στο UI το λέμε "Απαίτηση πελάτη", αλλά κρατάμε ίδιο db field
         "customer_complaint": "customer_complaint",
         "notes_general": "notes_general",
         "date_in": "date_in",
@@ -197,7 +250,7 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
     if hasattr(visit, "time_in") and not (getattr(visit, "time_in", "") or "").strip():
         set_if("time_in", now.strftime("%H:%M"))
 
-    # προσθήκη νέας κατηγορίας/εργασίας χωρίς να σβήνει τις επιλογές
+    # Προσθήκη νέας εργασίας χωρίς να χάνεται τίποτα
     new_category = (form.get("new_category") or "").strip()
     new_item_name = (form.get("new_item_name") or "").strip()
     if new_category and new_item_name:
@@ -210,7 +263,6 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
             db.add(ChecklistItem(category=new_category, name=new_item_name))
             db.commit()
 
-    # αποθήκευση γραμμών checklist
     items = db.query(ChecklistItem).all()
     existing_lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
     line_by_item = {
@@ -306,251 +358,10 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
     return templates.TemplateResponse("search.html", {"request": request, "user": u, "q": q, "results": results})
 
 # =========================
-# HISTORY
-# =========================
-@app.get("/history", response_class=HTMLResponse)
-def history_page(request: Request, from_date: str = "", to_date: str = "", db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    q = db.query(Visit)
-    if from_date and hasattr(Visit, "date_in"):
-        q = q.filter(Visit.date_in >= from_date)
-    if to_date and hasattr(Visit, "date_in"):
-        q = q.filter(Visit.date_in <= to_date)
-    visits = q.order_by(Visit.id.desc()).limit(500).all()
-    return templates.TemplateResponse(
-        "history.html",
-        {"request": request, "user": u, "from_date": from_date, "to_date": to_date, "visits": visits},
-    )
-
-# =========================
-# PRINT + PDF (μόνο επιλεγμένα/συμπληρωμένα)
-# =========================
-def _selected_lines(db: Session, visit_id: int) -> List[Tuple[ChecklistItem, VisitChecklistLine]]:
-    items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
-    lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
-    line_by_item = {
-        ln.checklist_item_id: ln
-        for ln in lines
-        if getattr(ln, "checklist_item_id", None) is not None
-    }
-
-    selected: List[Tuple[ChecklistItem, VisitChecklistLine]] = []
-    for it in items:
-        ln = line_by_item.get(it.id)
-        if not ln:
-            continue
-        checked = bool(getattr(ln, "checked", False))
-        notes = (getattr(ln, "notes", "") or "").strip()
-        pcode = (getattr(ln, "parts_code", "") or "").strip()
-        pqty = (getattr(ln, "parts_qty", "") or "").strip()
-        if checked or notes or pcode or pqty:
-            selected.append((it, ln))
-    return selected
-
-@app.get("/visits/{visit_id}/print", response_class=HTMLResponse)
-def visit_print(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    visit = db.query(Visit).filter(Visit.id == visit_id).first()
-    if not visit:
-        return RedirectResponse("/", status_code=302)
-    selected = _selected_lines(db, visit_id)
-    return templates.TemplateResponse("print.html", {"request": request, "user": u, "visit": visit, "selected": selected})
-
-def _pdf_bytes_for_visit(visit: Visit, selected: List[Tuple[ChecklistItem, VisitChecklistLine]]) -> bytes:
-    buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    w, h = A4
-    y = h - 40
-
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(40, y, "O&S STEPHANOU LTD")
-    y -= 18
-    c.setFont("Helvetica", 10)
-    c.drawString(40, y, "Michael Paridi 3, Palouriotissa | Tel: 22436990-22436992 | Email: osstephanou@gmail.com")
-    y -= 20
-
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(40, y, "JOB CARD")
-    y -= 18
-    c.setFont("Helvetica", 10)
-
-    def line(label: str, value: Any):
-        nonlocal y
-        value = "" if value is None else str(value)
-        c.drawString(40, y, f"{label}: {value}")
-        y -= 14
-
-    line("Job No", getattr(visit, "job_no", ""))
-    line("Ημ/νία Παραλαβής", getattr(visit, "date_in", ""))
-    line("Ώρα Παραλαβής", getattr(visit, "time_in", ""))
-    line("Ημ/νία Παράδοσης", getattr(visit, "date_out", ""))
-    line("Ώρα Παράδοσης", getattr(visit, "time_out", ""))
-    y -= 6
-    line("Πελάτης", getattr(visit, "customer_name", ""))
-    line("Τηλέφωνο", getattr(visit, "phone", ""))
-    line("Email", getattr(visit, "email", ""))
-    line("Αρ. Πινακίδας", getattr(visit, "plate_number", ""))
-    line("VIN", getattr(visit, "vin", ""))
-    line("Μοντέλο", getattr(visit, "model", ""))
-    line("KM", getattr(visit, "km", ""))
-
-    y -= 8
-    req_txt = getattr(visit, "customer_complaint", "")
-    if req_txt:
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(40, y, "Απαίτηση πελάτη:")
-        y -= 14
-        c.setFont("Helvetica", 10)
-        c.drawString(40, y, str(req_txt)[:160])
-        y -= 16
-
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(40, y, "Επιλεγμένες Εργασίες")
-    y -= 16
-    c.setFont("Helvetica", 10)
-
-    for it, ln in selected:
-        checked = bool(getattr(ln, "checked", False))
-        notes = (getattr(ln, "notes", "") or "").strip()
-        pcode = (getattr(ln, "parts_code", "") or "").strip()
-        pqty = (getattr(ln, "parts_qty", "") or "").strip()
-
-        parts_txt = ""
-        if pcode or pqty:
-            parts_txt = f" | Κωδικός εξαρτήματος: {pcode} | Ποσότητα: {pqty}"
-        notes_txt = f" | Σημειώσεις: {notes}" if notes else ""
-        ok_txt = " | OK" if checked else ""
-
-        txt = f"- [{it.category}] {it.name}{ok_txt}{parts_txt}{notes_txt}"
-
-        if y < 60:
-            c.showPage()
-            y = h - 40
-            c.setFont("Helvetica", 10)
-
-        c.drawString(40, y, txt[:180])
-        y -= 14
-
-    c.showPage()
-    c.save()
-    return buf.getvalue()
-
-@app.get("/visits/{visit_id}/pdf")
-def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    visit = db.query(Visit).filter(Visit.id == visit_id).first()
-    if not visit:
-        return RedirectResponse("/", status_code=302)
-    selected = _selected_lines(db, visit_id)
-    pdf_bytes = _pdf_bytes_for_visit(visit, selected)
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="visit_{visit_id}.pdf"'},
-    )
-
-# =========================
-# EMAIL (δίνουμε .eml)
-# =========================
-@app.get("/visits/{visit_id}/email")
-def visit_email_eml(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-    visit = db.query(Visit).filter(Visit.id == visit_id).first()
-    if not visit:
-        return RedirectResponse("/", status_code=302)
-
-    to_addr = (getattr(visit, "email", "") or "").strip()
-    subject = f"Job Card #{getattr(visit, 'job_no', visit_id)}"
-    body = "Καλησπέρα,\n\nΣας επισυνάπτουμε την κάρτα εργασίας.\n\nΜε εκτίμηση,\nO&S STEPHANOU LTD\n"
-    eml = (
-        f"To: {to_addr}\n"
-        f"Subject: {subject}\n"
-        f"Content-Type: text/plain; charset=utf-8\n\n"
-        f"{body}\n"
-        f"PDF: {request.base_url}visits/{visit_id}/pdf\n"
-    )
-    return PlainTextResponse(eml, headers={"Content-Disposition": f'attachment; filename="visit_{visit_id}.eml"'})
-
-# =========================
-# BACKUP / IMPORT
-# =========================
-@app.get("/backup")
-def backup_download(request: Request, db: Session = Depends(get_db)):
-    u = require_user(request, db)
-
-    items = db.query(ChecklistItem).all()
-    visits = db.query(Visit).all()
-    lines = db.query(VisitChecklistLine).all()
-
-    payload = {
-        "version": 1,
-        "exported_at": dt.datetime.utcnow().isoformat() + "Z",
-        "checklist_items": [{"id": it.id, "category": it.category, "name": it.name} for it in items],
-        "visits": [{c.name: getattr(v, c.name) for c in v.__table__.columns} for v in visits],
-        "visit_lines": [{c.name: getattr(ln, c.name) for c in ln.__table__.columns} for ln in lines],
-    }
-
-    data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/json",
-        headers={"Content-Disposition": 'attachment; filename="backup.json"'},
-    )
-
-@app.post("/import-backup")
-async def import_backup(request: Request, db: Session = Depends(get_db), file: UploadFile = File(...)):
-    u = require_user(request, db)
-
-    raw = await file.read()
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-    except Exception:
-        return JSONResponse({"ok": False, "error": "Invalid JSON backup"}, status_code=400)
-
-    # checklist items (χωρίς duplicates)
-    for it in payload.get("checklist_items", []):
-        category = (it.get("category") or "").strip()
-        name = (it.get("name") or "").strip()
-        if not category or not name:
-            continue
-        exists = db.query(ChecklistItem).filter(ChecklistItem.category == category, ChecklistItem.name == name).first()
-        if not exists:
-            db.add(ChecklistItem(category=category, name=name))
-    db.commit()
-
-    # visits
-    for v in payload.get("visits", []):
-        obj = Visit()
-        for k, val in v.items():
-            if hasattr(obj, k):
-                setattr(obj, k, val)
-        db.add(obj)
-    db.commit()
-
-    # lines
-    for ln in payload.get("visit_lines", []):
-        obj = VisitChecklistLine()
-        for k, val in ln.items():
-            if hasattr(obj, k):
-                setattr(obj, k, val)
-        db.add(obj)
-    db.commit()
-
-    return RedirectResponse("/", status_code=302)
-
-# =========================
-# RESET TEST (δέχεται ΚΑΙ GET ΚΑΙ POST για να μην "κολλάει")
+# RESET TEST
 # =========================
 @app.api_route("/reset-test", methods=["GET", "POST"])
 async def reset_test(request: Request, db: Session = Depends(get_db)):
-    """
-    Σβήνει ΟΛΟ το ιστορικό:
-    - VisitChecklistLine
-    - Visit
-    Δεν πειράζει τις κατηγορίες (ChecklistItem).
-    Κωδικός μέσα στον κώδικα.
-    """
-
     FIXED_RESET_CODE = "STE-2026"
 
     code = ""
@@ -561,7 +372,6 @@ async def reset_test(request: Request, db: Session = Depends(get_db)):
         code = (request.query_params.get("code") or "").strip()
 
     if code != FIXED_RESET_CODE:
-        # Επιστρέφουμε ξεκάθαρα λάθος κωδικό (ώστε να ξέρεις ότι δουλεύει)
         return JSONResponse({"ok": False, "error": "Wrong code"}, status_code=403)
 
     try:
@@ -581,9 +391,9 @@ async def reset_test(request: Request, db: Session = Depends(get_db)):
         return {
             "ok": True,
             "message": "Reset completed",
-            "driver": driver,
             "remaining_visits": db.query(Visit).count(),
             "remaining_lines": db.query(VisitChecklistLine).count(),
+            "checklist_count": db.query(ChecklistItem).count(),
         }
 
     except Exception as e:
