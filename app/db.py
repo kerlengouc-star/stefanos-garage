@@ -2,21 +2,18 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Σε Render, κράτα sqlite σε disk (persistent) αν έχεις disk
-# Αν δεν έχεις disk, θα είναι προσωρινό αλλά θα δουλεύει.
-DB_URL = os.getenv("DATABASE_URL", "").strip()
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-if DB_URL:
-    # Render sometimes gives postgres URLs starting with postgres://
-    if DB_URL.startswith("postgres://"):
-        DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
-    connect_args = {}
-else:
-    # local sqlite file
-    DB_URL = "sqlite:///./stefanos.db"
+# Fallback (μόνο αν δεν υπάρχει DATABASE_URL) -> τοπικό sqlite
+if not DATABASE_URL:
+    DATABASE_URL = "sqlite:///./local.db"
+
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
-engine = create_engine(DB_URL, connect_args=connect_args, pool_pre_ping=True)
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
