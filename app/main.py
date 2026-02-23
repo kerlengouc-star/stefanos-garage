@@ -15,12 +15,6 @@ from .db import get_db, engine
 from .models import Base, ChecklistItem, Visit, VisitChecklistLine
 from .pdf_utils import build_jobcard_pdf
 
-try:
-    from .email_utils import send_email_with_pdf
-except Exception:
-    send_email_with_pdf = None
-
-
 app = FastAPI()
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
@@ -67,7 +61,7 @@ async def all_exception_handler(request: Request, exc: Exception):
 def seed_master_if_empty(db: Session):
     if db.query(ChecklistItem).count() == 0:
         for name in DEFAULT_CHECKLIST:
-            db.add(ChecklistItem(category=DEFAULT_CATEGORY, name=name))
+            db.add(ChecklistItem(category=DEFAULT_CATEGORY, name=name, default_parts_code=None))
         db.commit()
 
 
@@ -75,9 +69,10 @@ def seed_master_if_empty(db: Session):
 def startup():
     Base.metadata.create_all(bind=engine)
 
-    # safe schema upgrades (SQLite)
+    # ✅ Safe schema upgrades (SQLite)
     try:
         with engine.connect() as conn:
+            # visit_checklist_lines columns
             cols = conn.execute(text("PRAGMA table_info(visit_checklist_lines)")).fetchall()
             colnames = {c[1] for c in cols}
             if "parts_code" not in colnames:
@@ -91,11 +86,18 @@ def startup():
                         "ADD COLUMN exclude_from_print BOOLEAN NOT NULL DEFAULT 0"
                     )
                 )
+
+            # checklist_items memory column
+            cols2 = conn.execute(text("PRAGMA table_info(checklist_items)")).fetchall()
+            colnames2 = {c[1] for c in cols2}
+            if "default_parts_code" not in colnames2:
+                conn.execute(text("ALTER TABLE checklist_items ADD COLUMN default_parts_code VARCHAR"))
+
             conn.commit()
     except Exception:
         pass
 
-    # ✅ IMPORTANT: seed checklist on startup (ώστε να υπάρχουν πάντα κατηγορίες)
+    # seed
     gen = get_db()
     db = next(gen)
     try:
@@ -159,7 +161,6 @@ def __ping():
     return {"ok": True, "where": "app/main.py"}
 
 
-# -------- BACKUP --------
 @app.get("/backup")
 def backup(db: Session = Depends(get_db)):
     sqlite_path = _sqlite_db_file_path()
@@ -168,7 +169,7 @@ def backup(db: Session = Depends(get_db)):
     if sqlite_path and os.path.exists(sqlite_path):
         with open(sqlite_path, "rb") as f:
             data = f.read()
-        filename = f"stefanos_backup_{now}.db"
+        filename = f"stephanou_backup_{now}.db"
         return Response(
             content=data,
             media_type="application/octet-stream",
@@ -216,10 +217,18 @@ def backup(db: Session = Depends(get_db)):
             }
             for ln in lines
         ],
-        "checklist_items": [{"id": it.id, "category": it.category, "name": it.name} for it in items],
+        "checklist_items": [
+            {
+                "id": it.id,
+                "category": it.category,
+                "name": it.name,
+                "default_parts_code": it.default_parts_code,
+            }
+            for it in items
+        ],
     }
     data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-    filename = f"stefanos_backup_{now}.json"
+    filename = f"stephanou_backup_{now}.json"
     return Response(
         content=data,
         media_type="application/json",
@@ -227,7 +236,6 @@ def backup(db: Session = Depends(get_db)):
     )
 
 
-# -------- HOME + SEARCH --------
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, q: str = "", db: Session = Depends(get_db)):
     seed_master_if_empty(db)
@@ -235,7 +243,6 @@ def index(request: Request, q: str = "", db: Session = Depends(get_db)):
     q_clean = (q or "").strip()
     query = db.query(Visit)
 
-    # ✅ SQLite-safe search: lower(column) LIKE lower(q)
     if q_clean:
         like = f"%{q_clean.lower()}%"
         query = query.filter(
@@ -259,14 +266,14 @@ def search(request: Request, q: str = "", db: Session = Depends(get_db)):
     return index(request=request, q=q, db=db)
 
 
-# -------- CREATE VISIT --------
 @app.post("/visits/new")
 def create_visit(db: Session = Depends(get_db)):
     seed_master_if_empty(db)
 
+    # ✅ ΜΗΝ βάζεις server time εδώ. Θα το βάλει ο browser στη φόρμα.
     v = Visit(
         job_no=f"JOB-{(db.query(Visit).count() + 1)}",
-        date_in=datetime.now(),
+        date_in=None,
         date_out=None,
         customer_name="",
         phone="",
@@ -290,18 +297,16 @@ def create_visit(db: Session = Depends(get_db)):
                 item_name=it.name,
                 result="OK",
                 notes="",
-                parts_code="",
+                # ✅ Προ-γέμισμα από μνήμη (default_parts_code)
+                parts_code=(it.default_parts_code or ""),
                 parts_qty=0,
                 exclude_from_print=False,
             )
         )
     db.commit()
-
-    # ✅ IMPORTANT: new visit ανοίγει με ALL για να φαίνονται οι κατηγορίες
     return RedirectResponse(f"/visits/{v.id}?mode=all", status_code=302)
 
 
-# -------- VISIT PAGE --------
 @app.get("/visits/{visit_id}", response_class=HTMLResponse)
 def visit_page(visit_id: int, request: Request, mode: str = "all", db: Session = Depends(get_db)):
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
@@ -318,7 +323,6 @@ def visit_page(visit_id: int, request: Request, mode: str = "all", db: Session =
     mode = (mode or "all").lower().strip()
     if mode == "selected":
         selected = [ln for ln in all_lines if is_selected_line(ln)]
-        # ✅ Αν δεν έχει τίποτα επιλεγμένο, δείξε όλα για να μην φαίνεται “άδειο”
         lines = selected if selected else all_lines
     else:
         mode = "all"
@@ -338,7 +342,6 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    # visit fields
     visit.date_in = combine_dt(form.get("date_in_date"), form.get("date_in_time"))
     visit.date_out = combine_dt(form.get("date_out_date"), form.get("date_out_time"))
 
@@ -350,15 +353,19 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     visit.customer_name = (form.get("customer_name") or "").strip()
     visit.phone = (form.get("phone") or "").strip()
     visit.email = (form.get("email") or "").strip()
+
+    # ✅ κρατά σωστά αυτό που γράφεις (μνήμη μέσα στο visit)
     visit.customer_complaint = (form.get("customer_complaint") or "").strip()
 
-    # save ALL lines first
     all_lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
+
     for ln in all_lines:
         if f"result_{ln.id}" in form:
             ln.result = (form.get(f"result_{ln.id}") or "OK").strip()
+
         if f"notes_{ln.id}" in form:
             ln.notes = (form.get(f"notes_{ln.id}") or "").strip()
+
         if f"parts_code_{ln.id}" in form:
             ln.parts_code = (form.get(f"parts_code_{ln.id}") or "").strip()
 
@@ -371,7 +378,17 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
 
         ln.exclude_from_print = (form.get(f"exclude_{ln.id}") == "1")
 
-    # then add new line (without losing what was selected)
+        # ✅ Μνήμη κωδικού: αν γράφτηκε parts_code, το κρατάμε στο master item
+        pc = (ln.parts_code or "").strip()
+        if pc:
+            it = (
+                db.query(ChecklistItem)
+                .filter(ChecklistItem.category == (ln.category or ""), ChecklistItem.name == (ln.item_name or ""))
+                .first()
+            )
+            if it:
+                it.default_parts_code = pc
+
     action = (form.get("action") or "").strip().lower()
     if action == "add_line":
         cat = (form.get("new_category") or "").strip()
@@ -391,7 +408,7 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
                 )
             )
             if add_master:
-                db.add(ChecklistItem(category=cat, name=name))
+                db.add(ChecklistItem(category=cat, name=name, default_parts_code=None))
 
     db.commit()
 
@@ -407,7 +424,6 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     return RedirectResponse(f"/visits/{visit_id}?mode={mode}", status_code=302)
 
 
-# -------- PRINT / PDF --------
 @app.get("/visits/{visit_id}/print", response_class=HTMLResponse)
 def visit_print(visit_id: int, request: Request, db: Session = Depends(get_db)):
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
@@ -472,7 +488,6 @@ def visit_pdf(visit_id: int, db: Session = Depends(get_db)):
     )
 
 
-# -------- CHECKLIST (MASTER) --------
 @app.get("/checklist", response_class=HTMLResponse)
 def checklist_page(request: Request, db: Session = Depends(get_db)):
     seed_master_if_empty(db)
@@ -486,7 +501,7 @@ async def checklist_add(request: Request, db: Session = Depends(get_db)):
     cat = (form.get("category") or "").strip()
     name = (form.get("name") or "").strip()
     if cat and name:
-        db.add(ChecklistItem(category=cat, name=name))
+        db.add(ChecklistItem(category=cat, name=name, default_parts_code=None))
         db.commit()
     return RedirectResponse("/checklist", status_code=302)
 
@@ -507,7 +522,6 @@ async def checklist_delete(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse("/checklist", status_code=302)
 
 
-# -------- HISTORY --------
 @app.get("/history", response_class=HTMLResponse)
 def history_page(request: Request, date_from: str = "", date_to: str = "", db: Session = Depends(get_db)):
     q = db.query(Visit)
