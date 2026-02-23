@@ -18,7 +18,7 @@
   <div class="alert alert-danger">Σφάλμα αποστολής email (έλεγξε SMTP env vars).</div>
 {% endif %}
 
-<form method="post" action="/visits/{{ visit.id }}/save_all" class="no-print">
+<form id="visit-form" method="post" action="/visits/{{ visit.id }}/save_all" class="no-print">
   <div class="card mb-3 mx-auto" style="max-width: 980px;">
     <div class="card-header fw-semibold">Στοιχεία Πελάτη / Οχήματος</div>
     <div class="card-body">
@@ -148,12 +148,14 @@
       {% if loop.last %}</tbody></table></div></div>{% endif %}
     {% endfor %}
 
+    <div id="checklist"></div>
+
     <div class="card mb-3 no-print">
       <div class="card-header fw-semibold">Προσθήκη (Κατηγορία + Εργασία)</div>
       <div class="card-body">
         <div class="small-muted mb-2">Προσθέτει νέα εργασία στο master checklist και σε αυτή την επίσκεψη, χωρίς να χαθούν τα στοιχεία πελάτη.</div>
         <div class="d-flex flex-wrap gap-2">
-          <form method="post" action="/visits/{{ visit.id }}/add_item" class="d-flex flex-wrap gap-2 w-100">
+          <form id="add-item-form" method="post" action="/visits/{{ visit.id }}/add_item" class="d-flex flex-wrap gap-2 w-100">
             <input class="form-control" style="max-width: 260px" name="new_category" placeholder="Κατηγορία">
             <input class="form-control" style="max-width: 360px" name="new_item" placeholder="Εργασία">
             <button class="btn btn-success">+ Προσθήκη</button>
@@ -185,3 +187,61 @@
 </script>
 
 {% endblock %}
+
+<script>
+(function() {
+  const visitForm = document.getElementById('visit-form');
+  const addForm = document.getElementById('add-item-form');
+
+  function setNowIfEmpty(dateEl, timeEl) {
+    if (!dateEl || !timeEl) return;
+    if (dateEl.value && timeEl.value) return;
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2,'0');
+    if (!dateEl.value) dateEl.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    if (!timeEl.value) timeEl.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  }
+
+  // Set local computer time on load if empty
+  setNowIfEmpty(document.querySelector('input[name="date_in"]'), document.querySelector('input[name="time_in"]'));
+  // Optional: set out time if empty AND date_out filled
+  // setNowIfEmpty(document.querySelector('input[name="date_out"]'), document.querySelector('input[name="time_out"]'));
+
+  if (addForm && visitForm) {
+    addForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const cat = addForm.querySelector('input[name="new_category"]')?.value?.trim();
+      const item = addForm.querySelector('input[name="new_item"]')?.value?.trim();
+      if (!cat || !item) return;
+
+      // 1) Save current visit form (so customer details & selections won't be lost)
+      try {
+        const fd1 = new FormData(visitForm);
+        await fetch(visitForm.action, {
+          method: 'POST',
+          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          body: fd1
+        });
+      } catch (err) {
+        console.error('Save failed', err);
+      }
+
+      // 2) Add new item
+      try {
+        const fd2 = new FormData(addForm);
+        await fetch(addForm.action, {
+          method: 'POST',
+          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          body: fd2
+        });
+      } catch (err) {
+        console.error('Add item failed', err);
+      }
+
+      // 3) Reload same page (now data is saved)
+      window.location.href = window.location.pathname + window.location.search + '#checklist';
+    });
+  }
+})();
+</script>

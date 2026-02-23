@@ -395,6 +395,11 @@ async def visit_save_all(
 
 
     db.commit()
+    # If called via fetch/AJAX, don't redirect (keeps page state manageable)
+    accept = (request.headers.get("accept") or "").lower()
+    xrw = (request.headers.get("x-requested-with") or "").lower()
+    if "application/json" in accept or xrw == "xmlhttprequest":
+        return JSONResponse({"ok": True})
     return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
 
 
@@ -445,6 +450,11 @@ async def visit_add_item(visit_id: int, request: Request, db: Session = Depends(
             )
             db.commit()
 
+    # If called via fetch/AJAX, don't redirect
+    accept = (request.headers.get("accept") or "").lower()
+    xrw = (request.headers.get("x-requested-with") or "").lower()
+    if "application/json" in accept or xrw == "xmlhttprequest":
+        return JSONResponse({"ok": True})
     return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
 
 
