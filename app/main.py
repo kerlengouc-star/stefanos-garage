@@ -603,9 +603,51 @@ def history_page(
         )
 
     visits = qy.order_by(Visit.id.desc()).limit(500).all()
+
+    visit_ids = [v.id for v in visits]
+    summaries: Dict[int, str] = {}
+    if visit_ids:
+        # Load related checklist lines in one query
+        lines = (
+            db.query(VisitChecklistLine)
+            .filter(VisitChecklistLine.visit_id.in_(visit_ids))
+            .order_by(VisitChecklistLine.visit_id.asc(), VisitChecklistLine.id.asc())
+            .all()
+        )
+        by_visit: Dict[int, List[VisitChecklistLine]] = {}
+        for ln in lines:
+            by_visit.setdefault(ln.visit_id, []).append(ln)
+
+        for v in visits:
+            parts: List[str] = []
+            if v.customer_complaint:
+                parts.append(f"Παράπονο: {v.customer_complaint}")
+            if v.notes_general:
+                parts.append(f"Σημ.: {v.notes_general}")
+
+            # include only non-OK lines or lines with notes/parts
+            extra = []
+            for ln in by_visit.get(v.id, []):
+                if (ln.result and ln.result != "OK") or (ln.notes and ln.notes.strip()) or (ln.parts_code and ln.parts_code.strip()):
+                    label = f"{ln.category}: {ln.item_name}"
+                    if ln.result and ln.result != "OK":
+                        label += f" [{ln.result}]"
+                    if ln.notes and ln.notes.strip():
+                        label += f" — {ln.notes.strip()}"
+                    if ln.parts_code and ln.parts_code.strip():
+                        qty = ln.parts_qty or 0
+                        label += f" (Parts: {ln.parts_code}{' x'+str(qty) if qty else ''})"
+                    extra.append(label)
+
+            if extra:
+                parts.append(" / ".join(extra[:4]) + (f" (+{len(extra)-4})" if len(extra) > 4 else ""))
+
+            summaries[v.id] = " | ".join([p.strip() for p in parts if p.strip()])
+
+
     return templates.TemplateResponse(
         "history.html",
-        {"request": request, "visits": visits, "from_date": from_date, "to_date": to_date, "q": q},
+        {"request": request, "visits": visits, "summaries": summaries, "from_date": from_date, "to_date": to_date, "q": q},
     )
 
 
