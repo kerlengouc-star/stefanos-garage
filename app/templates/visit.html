@@ -6,238 +6,255 @@
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
       <h3 class="m-0">Visit #{{ visit.id }}</h3>
-      <small class="text-muted">Use the form below, then click <b>Save</b> at the bottom.</small>
+      <small class="text-muted">Fill in details, tick checklist items, then click <b>Save</b> at the bottom.</small>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-      <a class="btn btn-outline-secondary btn-sm" href="/history">History</a>
-      <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}/print" target="_blank">Print</a>
-      <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
-      <a class="btn btn-outline-secondary btn-sm" href="/?q=">Home</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/history">History</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/visits/{{ visit.id }}/print" target="_blank">Print</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
     </div>
   </div>
 
-  <!-- Main form: Save ALL visit fields + all checklist lines -->
-  <form id="save-all-form" method="post" action="/visits/{{ visit.id }}/save_all">
+  <form id="visitForm" method="post" action="/visits/{{ visit.id }}/save_all">
 
     <!-- Customer card -->
     <div class="card shadow-sm mb-3">
-      <div class="card-header bg-white">
-        <b>Customer / Vehicle</b>
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <b>Customer & Vehicle</b>
+        <small class="text-muted">Auto time from your computer</small>
       </div>
       <div class="card-body">
         <div class="row g-2">
-          <div class="col-md-4">
-            <label class="form-label">Customer Name</label>
-            <input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}">
+          <div class="col-md-3">
+            <label class="form-label mb-1">Plate</label>
+            <input class="form-control" name="plate_number" value="{{ visit.plate_number or '' }}">
           </div>
-          <div class="col-md-4">
-            <label class="form-label">Phone</label>
-            <input class="form-control" name="customer_phone" value="{{ visit.customer_phone or '' }}">
+          <div class="col-md-3">
+            <label class="form-label mb-1">VIN</label>
+            <input class="form-control" name="vin" value="{{ visit.vin or '' }}">
           </div>
-          <div class="col-md-4">
-            <label class="form-label">Email</label>
-            <input class="form-control" name="customer_email" value="{{ visit.customer_email or '' }}">
+          <div class="col-md-3">
+            <label class="form-label mb-1">Model</label>
+            <input class="form-control" name="model" value="{{ visit.model or '' }}">
           </div>
-
-          <div class="col-md-4">
-            <label class="form-label">Car Model</label>
-            <input class="form-control" name="car_model" value="{{ visit.car_model or '' }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Plate</label>
-            <input class="form-control" name="plate" value="{{ visit.plate or '' }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">KM</label>
+          <div class="col-md-3">
+            <label class="form-label mb-1">KM</label>
             <input class="form-control" name="km" value="{{ visit.km or '' }}">
           </div>
 
-          <div class="col-md-3">
-            <label class="form-label">Date In</label>
-            <input id="date_in" class="form-control" name="date_in" value="{{ visit.date_in or '' }}" placeholder="YYYY-MM-DD">
+          <div class="col-md-4">
+            <label class="form-label mb-1">Customer name</label>
+            <input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}">
           </div>
-          <div class="col-md-3">
-            <label class="form-label">Time In</label>
-            <input id="time_in" class="form-control" name="time_in" value="{{ visit.time_in or '' }}" placeholder="HH:MM">
+          <div class="col-md-4">
+            <label class="form-label mb-1">Phone</label>
+            <input class="form-control" name="phone" value="{{ visit.phone or '' }}">
           </div>
-          <div class="col-md-3">
-            <label class="form-label">Date Out</label>
-            <input class="form-control" name="date_out" value="{{ visit.date_out or '' }}" placeholder="YYYY-MM-DD">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Time Out</label>
-            <input class="form-control" name="time_out" value="{{ visit.time_out or '' }}" placeholder="HH:MM">
+          <div class="col-md-4">
+            <label class="form-label mb-1">Email</label>
+            <input class="form-control" name="email" value="{{ visit.email or '' }}">
           </div>
 
-          <div class="col-12">
-            <label class="form-label">Customer Complaint / Request</label>
-            <textarea class="form-control" name="complaint" rows="2">{{ visit.complaint or '' }}</textarea>
+          <div class="col-md-3">
+            <label class="form-label mb-1">Date in</label>
+            <input id="date_in" type="date" class="form-control" name="date_in" value="{{ (visit.date_in.date().isoformat() if visit.date_in else '') }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label mb-1">Time in</label>
+            <input id="time_in" type="time" class="form-control" name="time_in" value="{{ (visit.date_in.time().strftime('%H:%M') if visit.date_in else '') }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label mb-1">Date out</label>
+            <input type="date" class="form-control" name="date_out" value="{{ (visit.date_out.date().isoformat() if visit.date_out else '') }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label mb-1">Time out</label>
+            <input type="time" class="form-control" name="time_out" value="{{ (visit.date_out.time().strftime('%H:%M') if visit.date_out else '') }}">
           </div>
 
-          <div class="col-12">
-            <label class="form-label">General Notes</label>
-            <textarea class="form-control" name="notes_general" rows="2">{{ visit.notes_general or '' }}</textarea>
+          <div class="col-md-6">
+            <label class="form-label mb-1">Customer complaint</label>
+            <textarea class="form-control" name="customer_complaint" rows="3">{{ visit.customer_complaint or '' }}</textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label mb-1">General notes</label>
+            <textarea class="form-control" name="notes_general" rows="3">{{ visit.notes_general or '' }}</textarea>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Category quick list (after customer details) -->
+    {% set ns = namespace(cats=[]) %}
+    {% for ln in lines|sort(attribute='category') %}
+      {% if ln.category and ln.category not in ns.cats %}
+        {% set ns.cats = ns.cats + [ln.category] %}
+      {% endif %}
+    {% endfor %}
+
+    {% if ns.cats %}
+    <div class="card shadow-sm mb-3">
+      <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+        <small class="text-muted me-2"><b>Categories:</b></small>
+        {% for cat in ns.cats %}
+          <a class="btn btn-sm btn-outline-primary" href="#cat_{{ loop.index }}">{{ cat }}</a>
+        {% endfor %}
+        <div class="ms-auto">
+          <a class="btn btn-sm btn-outline-secondary" href="/checklist" target="_blank">Manage master checklist</a>
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     <!-- Checklist -->
     <div class="card shadow-sm mb-3">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="card-header d-flex justify-content-between align-items-center">
         <b>Checklist</b>
-        <div class="d-flex gap-2">
-          <a class="btn btn-sm btn-outline-secondary" href="/checklist" target="_blank">Manage Master Checklist</a>
-        </div>
+        <small class="text-muted">Tick what applies</small>
       </div>
-
       <div class="card-body">
 
-        {% if categories %}
-          {% for cat in categories %}
-            <div class="mb-3">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="m-0">{{ cat }}</h6>
-                <small class="text-muted">Tick what applies</small>
-              </div>
-
-              <div class="table-responsive">
-                <table class="table table-sm align-middle">
-                  <thead>
-                    <tr class="text-muted">
-                      <th style="width: 44px;">✔</th>
-                      <th>Work / Item</th>
-                      <th style="width: 34%;">Notes</th>
-                      <th style="width: 120px;">Price</th>
-                      <th style="width: 40px;"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for line in lines_by_category.get(cat, []) %}
-                      <tr>
-                        <td class="text-center">
-                          <input class="form-check-input" type="checkbox"
-                                 name="line_selected_{{ line.id }}"
-                                 {% if line.selected %}checked{% endif %}>
-                        </td>
-                        <td>
-                          <div class="fw-semibold">{{ line.name }}</div>
-                        </td>
-                        <td>
-                          <input class="form-control form-control-sm" name="line_notes_{{ line.id }}" value="{{ line.notes or '' }}">
-                        </td>
-                        <td>
-                          <input class="form-control form-control-sm" name="line_price_{{ line.id }}" value="{{ line.price or '' }}">
-                        </td>
-                        <td class="text-end">
-                          <button class="btn btn-sm btn-outline-danger"
-                                  type="submit"
-                                  formaction="/visits/{{ visit.id }}/delete_line/{{ line.id }}"
-                                  formmethod="post"
-                                  title="Delete line">
-                            ×
-                          </button>
-                        </td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          {% endfor %}
+        {% if not lines %}
+          <div class="alert alert-warning mb-0">No checklist lines found for this visit.</div>
         {% else %}
-          <div class="text-muted">No checklist categories yet. Add items below or manage the master checklist.</div>
-        {% endif %}
 
+          {% set current_cat = namespace(name="") %}
+          {% for ln in lines|sort(attribute='category') %}
+            {% if ln.category != current_cat.name %}
+              {% if not loop.first %}
+                  </tbody></table></div></div>
+              {% endif %}
+              {% set current_cat.name = ln.category or "Other" %}
+              <div class="mt-2 mb-3" id="cat_{{ ns.cats.index(ln.category)+1 if ln.category in ns.cats else loop.index }}">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h6 class="m-0">{{ current_cat.name }}</h6>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle">
+                    <thead>
+                      <tr class="text-muted">
+                        <th style="width: 120px;">Result</th>
+                        <th>Work / Item</th>
+                        <th style="width: 32%;">Notes</th>
+                        <th style="width: 200px;">Parts</th>
+                        <th style="width: 120px;">Qty</th>
+                        <th style="width: 120px;">Hide</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+            {% endif %}
+
+            <tr>
+              <td>
+                <select class="form-select form-select-sm" name="result_{{ ln.id }}">
+                  <option value="OK" {% if (ln.result or 'OK')|upper == 'OK' %}selected{% endif %}>OK</option>
+                  <option value="CHECK" {% if (ln.result or '')|upper == 'CHECK' %}selected{% endif %}>CHECK</option>
+                  <option value="REPAIR" {% if (ln.result or '')|upper == 'REPAIR' %}selected{% endif %}>REPAIR</option>
+                </select>
+              </td>
+              <td>
+                <div><b>{{ ln.item_name or '' }}</b></div>
+              </td>
+              <td>
+                <input class="form-control form-control-sm" name="notes_{{ ln.id }}" value="{{ ln.notes or '' }}" placeholder="Notes...">
+              </td>
+              <td>
+                <input class="form-control form-control-sm" name="parts_code_{{ ln.id }}" value="{{ ln.parts_code or '' }}" placeholder="Part code">
+              </td>
+              <td>
+                <input class="form-control form-control-sm" name="parts_qty_{{ ln.id }}" value="{{ ln.parts_qty or 0 }}" inputmode="numeric">
+              </td>
+              <td class="text-center">
+                <input class="form-check-input" type="checkbox" name="exclude_{{ ln.id }}" {% if ln.exclude_from_print %}checked{% endif %}>
+              </td>
+            </tr>
+
+            {% if loop.last %}
+                </tbody></table></div></div>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
       </div>
     </div>
 
-    <!-- Add item: category + work together, ONE place only -->
+    <!-- Add category + work (single place, bottom) -->
     <div class="card shadow-sm mb-3">
-      <div class="card-header bg-white"><b>Add (Category + Work)</b></div>
+      <div class="card-header"><b>Add (Category + Work)</b></div>
       <div class="card-body">
         <div class="row g-2 align-items-end">
           <div class="col-md-4">
-            <label class="form-label">Category</label>
-            <input id="add_category" class="form-control" placeholder="e.g. Brakes">
+            <label class="form-label mb-1">Category</label>
+            <input class="form-control" id="new_category" name="new_category" placeholder="e.g. Brakes">
           </div>
           <div class="col-md-6">
-            <label class="form-label">Work / Item</label>
-            <input id="add_name" class="form-control" placeholder="e.g. Replace pads">
+            <label class="form-label mb-1">Work / Item</label>
+            <input class="form-control" id="new_item" name="new_item" placeholder="e.g. Replace pads">
           </div>
           <div class="col-md-2 d-grid">
-            <button id="add_btn" type="button" class="btn btn-primary">+ Add</button>
+            <button id="addBtn" type="button" class="btn btn-primary">+ Add</button>
           </div>
         </div>
-        <div class="form-text mt-2">
-          Tip: Click <b>Save</b> at the bottom anytime. The <b>+ Add</b> button will also auto-save first, so you won’t lose customer info.
-        </div>
+        <small class="text-muted d-block mt-2">Tip: “Add” will auto-save customer details first, so nothing is lost.</small>
       </div>
     </div>
 
-    <!-- Save at the END of page -->
-    <div class="d-flex justify-content-end gap-2 pb-4">
-      <button id="save_btn" class="btn btn-success btn-lg" type="submit">Save</button>
+    <!-- Save at the very end -->
+    <div class="d-flex justify-content-end gap-2 pb-3">
+      <button id="saveBtn" type="submit" class="btn btn-success btn-lg">Save</button>
     </div>
 
   </form>
 </div>
 
 <script>
-(function() {
-  // Set date/time from computer if empty (local browser time)
+(function(){
+  // Auto-fill date/time in from YOUR computer time if empty
   function pad2(n){ return String(n).padStart(2,'0'); }
-  const dIn = document.getElementById("date_in");
-  const tIn = document.getElementById("time_in");
-  try {
+  const di = document.getElementById('date_in');
+  const ti = document.getElementById('time_in');
+  if (di && !di.value) {
     const now = new Date();
-    if (dIn && !dIn.value) dIn.value = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
-    if (tIn && !tIn.value) tIn.value = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-  } catch(e) {}
-
-  // Add item without losing data:
-  // 1) POST save_all with current form data (AJAX)
-  // 2) POST add_item with category+name
-  const addBtn = document.getElementById("add_btn");
-  const addCategory = document.getElementById("add_category");
-  const addName = document.getElementById("add_name");
-  const saveForm = document.getElementById("save-all-form");
-
-  async function postForm(url, formData) {
-    const resp = await fetch(url, { method: "POST", body: formData, credentials: "same-origin" });
-    return resp;
+    di.value = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
+  }
+  if (ti && !ti.value) {
+    const now = new Date();
+    ti.value = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
   }
 
-  if (addBtn && addCategory && addName && saveForm) {
-    addBtn.addEventListener("click", async () => {
-      const category = (addCategory.value || "").trim();
-      const name = (addName.value || "").trim();
-      if (!category || !name) {
-        alert("Please enter Category and Work/Item.");
-        return;
+  // Add without losing data: save_all (AJAX) then add_item (AJAX)
+  const addBtn = document.getElementById('addBtn');
+  const form = document.getElementById('visitForm');
+
+  async function postForm(url){
+    const fd = new FormData(form);
+    const res = await fetch(url, {
+      method: 'POST',
+      body: fd,
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json'
       }
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return await res.json().catch(()=>({ok:true}));
+  }
+
+  if (addBtn) {
+    addBtn.addEventListener('click', async function(){
+      const cat = document.getElementById('new_category');
+      const item = document.getElementById('new_item');
+      if (!cat.value.trim() || !item.value.trim()) return;
 
       addBtn.disabled = true;
-      addBtn.textContent = "Adding...";
-
-      try {
-        // 1) Auto-save everything first
-        const saveData = new FormData(saveForm);
-        await postForm(saveForm.getAttribute("action"), saveData);
-
-        // 2) Add item
-        const addData = new FormData();
-        addData.append("category", category);
-        addData.append("name", name);
-        await postForm(`/visits/{{ visit.id }}/add_item`, addData);
-
-        // Reload same visit to show the new item, without losing saved values
+      try{
+        await postForm(`/visits/{{ visit.id }}/save_all`);
+        await postForm(`/visits/{{ visit.id }}/add_item`);
+        // reload to show the new line & keep everything saved
         window.location.href = `/visits/{{ visit.id }}?mode=all`;
-      } catch (e) {
-        alert("Error while adding. Please try again.");
-      } finally {
+      }catch(e){
+        alert('Add failed: ' + e.message);
+      }finally{
         addBtn.disabled = false;
-        addBtn.textContent = "+ Add";
       }
     });
   }
