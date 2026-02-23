@@ -23,7 +23,7 @@ from reportlab.lib.pagesizes import A4
 
 from .db import SessionLocal, engine, Base
 
-# Models (User is OPTIONAL: δεν θα σπάει αν δεν υπάρχει)
+# Models (User is OPTIONAL)
 try:
     from .models import User  # type: ignore
     HAS_USER = True
@@ -34,9 +34,6 @@ except Exception:
 from .models import ChecklistItem, Visit, VisitChecklistLine
 
 
-# =========================
-# APP
-# =========================
 app = FastAPI()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-please")
@@ -58,7 +55,7 @@ def get_db():
 
 @app.on_event("startup")
 def on_startup():
-    # Δημιουργεί πίνακες αν λείπουν (fix "no such table")
+    # Fix: δημιουργεί πίνακες αν λείπουν (π.χ. "no such table: visits")
     Base.metadata.create_all(bind=engine)
 
 
@@ -97,7 +94,6 @@ def login_post(
     if not HAS_USER:
         return RedirectResponse("/", status_code=302)
 
-    # Προσαρμοστικό login (για να μην σπάει με διαφορετικό schema)
     u = None
     if hasattr(User, "email"):  # type: ignore
         u = db.query(User).filter(getattr(User, "email") == email).first()  # type: ignore
@@ -105,7 +101,6 @@ def login_post(
     if not u:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Λάθος στοιχεία"})
 
-    # Δεν ξέρουμε ποιο field κρατά password. Δοκιμάζουμε πιθανές επιλογές.
     ok = False
     for field in ["password", "password_hash", "hashed_password"]:
         if hasattr(u, field):
@@ -170,7 +165,8 @@ def index(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("index.html", {"request": request, "user": u, "visits": visits})
 
 
-@app.get("/visits/new")
+# ✅ FIX: /visits/new να δουλεύει ΚΑΙ με GET ΚΑΙ με POST (για να μην βγάζει Method Not Allowed)
+@app.api_route("/visits/new", methods=["GET", "POST"])
 def visit_new(request: Request, db: Session = Depends(get_db)):
     u = require_user(request, db)
     if not u and HAS_USER:
@@ -180,19 +176,18 @@ def visit_new(request: Request, db: Session = Depends(get_db)):
 
     v = Visit()
 
-    # Αυτόματα ημερομηνία/ώρα παραλαβής (όπως ζήτησες: ώρα υπολογιστή)
     if hasattr(v, "date_in"):
         setattr(v, "date_in", now.date().isoformat())
     if hasattr(v, "time_in"):
         setattr(v, "time_in", now.strftime("%H:%M"))
 
-    # default status αν υπάρχει
     if hasattr(v, "status") and not getattr(v, "status", None):
         setattr(v, "status", "open")
 
     db.add(v)
     db.commit()
     db.refresh(v)
+
     return RedirectResponse(f"/visits/{v.id}", status_code=302)
 
 
@@ -206,10 +201,8 @@ def visit_view(visit_id: int, request: Request, db: Session = Depends(get_db)):
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    # checklist items
     items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
 
-    # visit lines
     lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
     line_by_item = {ln.checklist_item_id: ln for ln in lines if getattr(ln, "checklist_item_id", None) is not None}
 
@@ -228,7 +221,7 @@ def visit_view(visit_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 # =========================
-# SAVE ALL (1 κουμπί Save)
+# SAVE ALL (ένα κουμπί Save)
 # =========================
 @app.post("/visits/{visit_id}/save_all")
 async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
@@ -246,8 +239,6 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
         if hasattr(visit, field):
             setattr(visit, field, val)
 
-    # ------- Visit fields (ασφαλές: μόνο αν υπάρχουν) -------
-    # “Παράπονο πελάτη” -> “Απαίτηση πελάτη” (κρατάμε το ίδιο db field αν είναι customer_complaint)
     field_map = {
         "job_no": "job_no",
         "plate_number": "plate_number",
@@ -257,7 +248,7 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
         "email": "email",
         "model": "model",
         "km": "km",
-        "customer_complaint": "customer_complaint",  # στο UI το λέμε Απαίτηση πελάτη
+        "customer_complaint": "customer_complaint",  # UI: Απαίτηση πελάτη
         "notes_general": "notes_general",
         "date_in": "date_in",
         "time_in": "time_in",
@@ -273,14 +264,13 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
         if form_key in form:
             set_if(model_field, (form.get(form_key) or "").strip())
 
-    # Αν λείπει ώρα/ημερομηνία παραλαβής, συμπλήρωσε από ώρα υπολογιστή
     now = dt.datetime.now()
     if hasattr(visit, "date_in") and not (getattr(visit, "date_in", "") or "").strip():
         set_if("date_in", now.date().isoformat())
     if hasattr(visit, "time_in") and not (getattr(visit, "time_in", "") or "").strip():
         set_if("time_in", now.strftime("%H:%M"))
 
-    # ------- Add new category/item (χωρίς να σβήνει επιλογές) -------
+    # add new checklist item (χωρίς να σβήνει επιλογές)
     new_category = (form.get("new_category") or "").strip()
     new_item_name = (form.get("new_item_name") or "").strip()
     if new_category and new_item_name:
@@ -294,7 +284,6 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
             db.add(ChecklistItem(category=new_category, name=new_item_name))
             db.commit()
 
-    # ------- Save checklist lines -------
     items = db.query(ChecklistItem).all()
     existing_lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
     line_by_item = {ln.checklist_item_id: ln for ln in existing_lines if getattr(ln, "checklist_item_id", None) is not None}
@@ -304,8 +293,6 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
 
         checked = form.get(f"chk_{cid}") in ("on", "1", "true", "True")
         notes = (form.get(f"notes_{cid}") or "").strip()
-
-        # Ελληνική ονομασία στο UI, αλλά field στο DB: parts_code / parts_qty
         parts_code = (form.get(f"parts_code_{cid}") or "").strip()
         parts_qty = (form.get(f"parts_qty_{cid}") or "").strip()
 
@@ -406,22 +393,15 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
 
 
 # =========================
-# HISTORY (date range)
+# HISTORY
 # =========================
 @app.get("/history", response_class=HTMLResponse)
-def history_page(
-    request: Request,
-    from_date: str = "",
-    to_date: str = "",
-    db: Session = Depends(get_db),
-):
+def history_page(request: Request, from_date: str = "", to_date: str = "", db: Session = Depends(get_db)):
     u = require_user(request, db)
     if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
     q = db.query(Visit)
-
-    # προσπαθούμε να φιλτράρουμε με date_in αν υπάρχει
     if from_date and hasattr(Visit, "date_in"):
         q = q.filter(Visit.date_in >= from_date)
     if to_date and hasattr(Visit, "date_in"):
@@ -431,18 +411,12 @@ def history_page(
 
     return templates.TemplateResponse(
         "history.html",
-        {
-            "request": request,
-            "user": u,
-            "from_date": from_date,
-            "to_date": to_date,
-            "visits": visits,
-        },
+        {"request": request, "user": u, "from_date": from_date, "to_date": to_date, "visits": visits},
     )
 
 
 # =========================
-# PRINT + PDF (μόνο ό,τι συμπλήρωσες/επέλεξες)
+# PRINT + PDF (μόνο ό,τι έχεις επιλέξει/γράψει)
 # =========================
 def _selected_lines(db: Session, visit_id: int) -> List[Tuple[ChecklistItem, VisitChecklistLine]]:
     items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
@@ -481,14 +455,14 @@ def visit_print(visit_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 def _pdf_bytes_for_visit(visit: Visit, selected: List[Tuple[ChecklistItem, VisitChecklistLine]]) -> bytes:
-    # ΧΩΡΙΣ arial.ttf — μόνο Helvetica (δεν σπάει ποτέ)
+    # ΧΩΡΙΣ arial.ttf — δεν θα σπάει ποτέ
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
 
     y = h - 40
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(40, y, "O&S STEPHANOU LTD")  # χωρίς περίεργους χαρακτήρες
+    c.drawString(40, y, "O&S STEPHANOU LTD")
     y -= 18
     c.setFont("Helvetica", 10)
     c.drawString(40, y, "Michael Paridi 3, Palouriotissa | Tel: 22436990-22436992 | Email: osstephanou@gmail.com")
@@ -506,7 +480,6 @@ def _pdf_bytes_for_visit(visit: Visit, selected: List[Tuple[ChecklistItem, Visit
         c.drawString(40, y, f"{label}: {value}")
         y -= 14
 
-    # Header fields
     line("Job No", getattr(visit, "job_no", ""))
     line("Ημ/νία Παραλαβής", getattr(visit, "date_in", ""))
     line("Ώρα Παραλαβής", getattr(visit, "time_in", ""))
@@ -523,7 +496,6 @@ def _pdf_bytes_for_visit(visit: Visit, selected: List[Tuple[ChecklistItem, Visit
     line("KM", getattr(visit, "km", ""))
 
     y -= 8
-    # “Απαίτηση πελάτη” (γράφεται στο customer_complaint αν υπάρχει)
     req_txt = getattr(visit, "customer_complaint", "")
     if req_txt:
         c.setFont("Helvetica-Bold", 10)
@@ -586,7 +558,7 @@ def visit_pdf(visit_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 # =========================
-# EMAIL (δεν στέλνουμε email εμείς, δίνουμε .eml για να το στείλεις)
+# EMAIL (.eml download)
 # =========================
 @app.get("/visits/{visit_id}/email")
 def visit_email_eml(visit_id: int, request: Request, db: Session = Depends(get_db)):
@@ -602,7 +574,6 @@ def visit_email_eml(visit_id: int, request: Request, db: Session = Depends(get_d
     subject = f"Job Card #{getattr(visit, 'job_no', visit_id)}"
     body = "Καλησπέρα,\n\nΣας επισυνάπτουμε την κάρτα εργασίας.\n\nΜε εκτίμηση,\nO&S STEPHANOU LTD\n"
 
-    # Απλό .eml χωρίς attachment (για να μην σπάει). Το PDF το κατεβάζεις από /pdf.
     eml = (
         f"To: {to_addr}\n"
         f"Subject: {subject}\n"
@@ -657,7 +628,6 @@ async def import_backup(request: Request, db: Session = Depends(get_db), file: U
     except Exception:
         return JSONResponse({"ok": False, "error": "Invalid JSON backup"}, status_code=400)
 
-    # checklist items (χωρίς διπλοεγγραφές)
     for it in payload.get("checklist_items", []):
         category = (it.get("category") or "").strip()
         name = (it.get("name") or "").strip()
@@ -668,7 +638,6 @@ async def import_backup(request: Request, db: Session = Depends(get_db), file: U
             db.add(ChecklistItem(category=category, name=name))
     db.commit()
 
-    # visits
     for v in payload.get("visits", []):
         obj = Visit()
         for k, val in v.items():
@@ -677,7 +646,6 @@ async def import_backup(request: Request, db: Session = Depends(get_db), file: U
         db.add(obj)
     db.commit()
 
-    # lines
     for ln in payload.get("visit_lines", []):
         obj = VisitChecklistLine()
         for k, val in ln.items():
@@ -691,26 +659,19 @@ async def import_backup(request: Request, db: Session = Depends(get_db), file: U
 
 # =========================
 # RESET TEST (σταθερός κωδικός μέσα στον κώδικα)
+# ✅ FIX: δέχεται ΚΑΙ GET ΚΑΙ POST (για να μην "μην λειτουργεί")
 # =========================
-@app.post("/reset-test")
-def reset_test(
-    request: Request,
-    db: Session = Depends(get_db),
-    code: str = Form(""),
-):
-    """
-    Σβήνει ΟΛΟ το ιστορικό:
-    - VisitChecklistLine
-    - Visit
-    ΔΕΝ σβήνει τις κατηγορίες ChecklistItem.
-    """
-
+@app.api_route("/reset-test", methods=["GET", "POST"])
+async def reset_test(request: Request, db: Session = Depends(get_db), code: str = Form("")):
     u = require_user(request, db)
     if not u and HAS_USER:
         return RedirectResponse("/login", status_code=302)
 
-    # ✅ ΒΑΛΕ ΕΔΩ τον κωδικό που θέλεις
     FIXED_RESET_CODE = "STE-2026"
+
+    # Αν έρθει ως GET (χωρίς form), τότε παίρνουμε code από query string ?code=...
+    if request.method == "GET":
+        code = (request.query_params.get("code") or "").strip()
 
     if code != FIXED_RESET_CODE:
         return JSONResponse({"ok": False, "error": "Wrong code"}, status_code=403)
@@ -723,23 +684,4 @@ def reset_test(
         if driver.startswith("postgresql"):
             db.execute(text(f'TRUNCATE TABLE "{lines_table}" RESTART IDENTITY CASCADE;'))
             db.execute(text(f'TRUNCATE TABLE "{visits_table}" RESTART IDENTITY CASCADE;'))
-            db.commit()
-        else:
-            db.query(VisitChecklistLine).delete(synchronize_session=False)
-            db.query(Visit).delete(synchronize_session=False)
-            db.commit()
-
-        remaining_visits = db.query(Visit).count()
-        remaining_lines = db.query(VisitChecklistLine).count()
-
-        return {
-            "ok": True,
-            "message": "Reset completed",
-            "remaining_visits": remaining_visits,
-            "remaining_lines": remaining_lines,
-            "driver": driver,
-        }
-
-    except Exception as e:
-        db.rollback()
-        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"}, status_code=500)
+            db.commit
