@@ -341,7 +341,7 @@ async def reset_data(
     if (reset_password or "").strip() != expected:
         raise HTTPException(status_code=403, detail="Λάθος κωδικός για Reset.")
 
-    # κλείνουμε session για να μην κρατά cache
+    # Κλείνουμε session για να μην κρατά cache
     try:
         db.rollback()
     except Exception:
@@ -353,25 +353,38 @@ async def reset_data(
 
     driver = (engine.url.drivername or "").lower()
 
+    def qname(tbl):
+        # ασφαλές quoted schema/table name
+        schema = getattr(tbl, "schema", None)
+        name = getattr(tbl, "name", None) or str(tbl)
+        if schema:
+            return f'"{schema}"."{name}"'
+        return f'"{name}"'
+
+    # Παίρνουμε τα πραγματικά tables από SQLAlchemy models (όχι hard-coded strings)
+    visits_tbl = Visit.__table__
+    lines_tbl = VisitChecklistLine.__table__
+    mem_tbl = PartMemory.__table__
+    master_tbl = ChecklistItem.__table__
+
     if driver.startswith("postgresql"):
         with engine.begin() as conn:
-            # ΣΒΗΝΕΙ ΟΛΟ ΤΟ ΙΣΤΟΡΙΚΟ (visits + lines) με CASCADE
-            # (TRUNCATE είναι πιο σίγουρο από DELETE σε Postgres)
-            conn.execute(text("TRUNCATE TABLE visit_checklist_lines RESTART IDENTITY CASCADE;"))
-            conn.execute(text("TRUNCATE TABLE visits RESTART IDENTITY CASCADE;"))
+            # Σβήνει ΠΡΑΓΜΑΤΙΚΑ το ιστορικό
+            conn.execute(text(f"TRUNCATE TABLE {qname(lines_tbl)} RESTART IDENTITY CASCADE;"))
+            conn.execute(text(f"TRUNCATE TABLE {qname(visits_tbl)} RESTART IDENTITY CASCADE;"))
 
-            # Αν θέλεις να σβήνει ΚΑΙ τα memories + master checklist
+            # Προαιρετικά: σβήνει και memories + master checklist
             if keep_master.strip() == "0":
-                conn.execute(text("TRUNCATE TABLE part_memories RESTART IDENTITY CASCADE;"))
-                conn.execute(text("TRUNCATE TABLE checklist_items RESTART IDENTITY CASCADE;"))
+                conn.execute(text(f"TRUNCATE TABLE {qname(mem_tbl)} RESTART IDENTITY CASCADE;"))
+                conn.execute(text(f"TRUNCATE TABLE {qname(master_tbl)} RESTART IDENTITY CASCADE;"))
     else:
-        # fallback
+        # fallback για sqlite/άλλο
         with engine.begin() as conn:
-            conn.execute(text("DELETE FROM visit_checklist_lines"))
-            conn.execute(text("DELETE FROM visits"))
+            conn.execute(text(f"DELETE FROM {qname(lines_tbl)}"))
+            conn.execute(text(f"DELETE FROM {qname(visits_tbl)}"))
             if keep_master.strip() == "0":
-                conn.execute(text("DELETE FROM part_memories"))
-                conn.execute(text("DELETE FROM checklist_items"))
+                conn.execute(text(f"DELETE FROM {qname(mem_tbl)}"))
+                conn.execute(text(f"DELETE FROM {qname(master_tbl)}"))
 
     return RedirectResponse("/", status_code=302)
 # ---------------------------
