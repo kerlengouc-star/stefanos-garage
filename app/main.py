@@ -137,6 +137,42 @@ def __ping():
     return {"ok": True, "where": "app/main.py"}
 
 
+@app.get("/__dbinfo")
+def __dbinfo(db: Session = Depends(get_db)):
+    # δείχνει τι DB χρησιμοποιεί πραγματικά το service
+    driver = (engine.url.drivername or "").lower()
+    url = str(engine.url)
+
+    # για ασφάλεια, κρύβουμε password αν υπάρχει
+    safe_url = url
+    try:
+        if "://" in url and "@" in url:
+            prefix, rest = url.split("://", 1)
+            creds, host = rest.split("@", 1)
+            if ":" in creds:
+                user, _pwd = creds.split(":", 1)
+                safe_url = f"{prefix}://{user}:***@{host}"
+    except Exception:
+        pass
+
+    visits_count = db.execute(text("SELECT COUNT(*) FROM visits")).scalar() if table_exists(db, "visits") else None
+
+    return {
+        "driver": driver,
+        "database_url": safe_url,
+        "visits_count": visits_count,
+    }
+
+
+def table_exists(db: Session, table_name: str) -> bool:
+    try:
+        # works in sqlite/postgres
+        db.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1"))
+        return True
+    except Exception:
+        return False
+
+
 # ---------------------------
 # BACKUP (EXPORT)
 # ---------------------------
