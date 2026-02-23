@@ -305,7 +305,7 @@ async def reset_data(
     if (reset_password or "").strip() != expected:
         raise HTTPException(status_code=403, detail="Λάθος κωδικός για Reset.")
 
-    # Για να μην κρατάει τίποτα cached
+    # κλείνουμε session για να μην κρατά cache
     try:
         db.rollback()
     except Exception:
@@ -315,18 +315,31 @@ async def reset_data(
     except Exception:
         pass
 
-    # ΣΙΓΟΥΡΟ reset: απευθείας SQL στη βάση
-    with engine.begin() as conn:
-        conn.execute(text("DELETE FROM visit_checklist_lines"))
-        conn.execute(text("DELETE FROM visits"))
+    driver = (engine.url.drivername or "").lower()
 
-        if keep_master.strip() == "0":
-            conn.execute(text("DELETE FROM part_memories"))
-            conn.execute(text("DELETE FROM checklist_items"))
+    # 1) PostgreSQL: TRUNCATE (το πιο σίγουρο)
+    if driver.startswith("postgresql"):
+        with engine.begin() as conn:
+            # CASCADE για να μη μείνουν child rows
+            conn.execute(text("TRUNCATE TABLE visit_checklist_lines RESTART IDENTITY CASCADE;"))
+            conn.execute(text("TRUNCATE TABLE visits RESTART IDENTITY CASCADE;"))
+
+            if keep_master.strip() == "0":
+                # αν θες να σβήσει και memories + master checklist
+                conn.execute(text("TRUNCATE TABLE part_memories RESTART IDENTITY CASCADE;"))
+                conn.execute(text("TRUNCATE TABLE checklist_items RESTART IDENTITY CASCADE;"))
+
+    # 2) SQLite/άλλο: DELETE
+    else:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM visit_checklist_lines"))
+            conn.execute(text("DELETE FROM visits"))
+
+            if keep_master.strip() == "0":
+                conn.execute(text("DELETE FROM part_memories"))
+                conn.execute(text("DELETE FROM checklist_items"))
 
     return RedirectResponse("/", status_code=302)
-
-
 # ---------------------------
 # PAGES
 # ---------------------------
