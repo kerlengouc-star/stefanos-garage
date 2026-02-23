@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey
 from sqlalchemy.orm import relationship
 
 from .db import Base
@@ -8,8 +8,11 @@ class ChecklistItem(Base):
     __tablename__ = "checklist_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    category = Column(String(255), nullable=False, index=True)
-    name = Column(String(255), nullable=False, index=True)
+    category = Column(String, index=True, nullable=False)
+    name = Column(String, index=True, nullable=False)
+
+    # ✅ Μνήμη: default κωδικός εξαρτήματος για αυτό το item
+    default_parts_code = Column(String, nullable=True)
 
 
 class Visit(Base):
@@ -17,57 +20,41 @@ class Visit(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    job_no = Column(String(100), nullable=True, index=True)
+    job_no = Column(String, nullable=True)
 
     date_in = Column(DateTime, nullable=True)
     date_out = Column(DateTime, nullable=True)
 
-    plate_number = Column(String(50), nullable=True, index=True)
-    vin = Column(String(80), nullable=True, index=True)
+    plate_number = Column(String, nullable=True)
+    vin = Column(String, nullable=True)
+    model = Column(String, nullable=True)
+    km = Column(String, nullable=True)
 
-    customer_name = Column(String(200), nullable=True, index=True)
-    phone = Column(String(80), nullable=True, index=True)
-    email = Column(String(200), nullable=True, index=True)
+    customer_name = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
 
-    model = Column(String(200), nullable=True, index=True)
-    km = Column(String(50), nullable=True)
-
+    # ✅ Αυτό είναι που θες να γράφεις (label θα αλλάξει σε “Απαίτηση πελάτη”)
     customer_complaint = Column(Text, nullable=True)
-    notes_general = Column(Text, nullable=True)
 
-    total_parts = Column(String(50), nullable=True)
-    total_labor = Column(String(50), nullable=True)
-    total_amount = Column(String(50), nullable=True)
-
-    status = Column(String(50), nullable=True)
-
-    lines = relationship(
-        "VisitChecklistLine",
-        back_populates="visit",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
+    lines = relationship("VisitChecklistLine", back_populates="visit", cascade="all, delete-orphan")
 
 
 class VisitChecklistLine(Base):
     __tablename__ = "visit_checklist_lines"
 
     id = Column(Integer, primary_key=True, index=True)
-    visit_id = Column(Integer, ForeignKey("visits.id", ondelete="CASCADE"), nullable=False, index=True)
+    visit_id = Column(Integer, ForeignKey("visits.id"), index=True, nullable=False)
 
-    category = Column(String(255), nullable=False, index=True)
-    item_name = Column(String(255), nullable=False, index=True)
+    category = Column(String, nullable=True)
+    item_name = Column(String, nullable=True)
 
-    # OK / CHECK / REPAIR
-    result = Column(String(20), nullable=False, default="OK")
+    result = Column(String, nullable=True)  # OK / CHECK / REPAIR
+    notes = Column(String, nullable=True)
 
-    notes = Column(Text, nullable=True)
-
-    # ✅ Parts
-    parts_code = Column(String(120), nullable=True)
+    parts_code = Column(String, nullable=True)
     parts_qty = Column(Integer, nullable=False, default=0)
 
-    # ✅ print/pdf exclude
     exclude_from_print = Column(Boolean, nullable=False, default=False)
 
     visit = relationship("Visit", back_populates="lines")
