@@ -1,70 +1,73 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="py-2">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h3 class="m-0">Stephanou Garage</h3>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="m-0">Stephanou Garage</h5>
+
+  <div class="d-flex gap-2 align-items-center">
+    <a class="btn btn-outline-primary btn-sm" href="/backup">Backup</a>
+
+    <form class="d-flex gap-2 align-items-center" action="/backup/import" method="post" enctype="multipart/form-data">
+      <input class="form-control form-control-sm" type="file" name="file" accept=".json">
+      <button class="btn btn-outline-primary btn-sm" type="submit">Import Backup</button>
+    </form>
+
+    <form action="/reset" method="post" onsubmit="return confirm('Να σβηστούν ΟΛΑ τα test δεδομένα;');">
+      <input type="hidden" name="keep_master" value="1">
+      <button class="btn btn-outline-danger btn-sm" type="submit">Reset Tests</button>
+    </form>
+
+    <form action="/visits/new" method="post">
+      <button class="btn btn-primary btn-sm" type="submit">+ Νέα Επίσκεψη</button>
+    </form>
+
+    <a class="btn btn-outline-secondary btn-sm" href="/checklist">Checklist</a>
   </div>
+</div>
 
-  <div class="card shadow-sm mb-3">
-    <div class="card-body">
-      <form class="row g-2" method="get" action="/">
-        <div class="col-md-10">
-          <input class="form-control" name="q" value="{{ q or '' }}"
-                 placeholder="Αναζήτηση: όνομα, τηλέφωνο, email, πινακίδα, μοντέλο, VIN, job...">
-        </div>
-        <div class="col-md-2">
-          <button class="btn btn-primary w-100" type="submit">Search</button>
-        </div>
-      </form>
-    </div>
+<form class="row g-2 mb-3" method="get" action="/search">
+  <div class="col-md-10">
+    <input class="form-control" name="q" value="{{ q or '' }}" placeholder="Αναζήτηση: όνομα, πινακίδα, τηλέφωνο, email, μοντέλο, VIN, job...">
   </div>
+  <div class="col-md-2">
+    <button class="btn btn-outline-secondary w-100" type="submit">Search</button>
+  </div>
+</form>
 
-  <form method="post" action="/visits/new" class="mb-3">
-    <button class="btn btn-success">+ Νέα Επίσκεψη</button>
-  </form>
-
-  <div class="card shadow-sm">
-    <div class="card-body">
-      <h6 class="mb-2">Τελευταίες Επισκέψεις</h6>
-
-      {% if visits|length == 0 %}
-        <div class="text-muted">Δεν βρέθηκαν επισκέψεις.</div>
-      {% else %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Job</th>
-                <th>Πελάτης</th>
-                <th>Τηλέφωνο</th>
-                <th>Πινακίδα</th>
-                <th>Μοντέλο</th>
-                <th>Ημ/νία Άφιξης</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for v in visits %}
-                <tr>
-                  <td>{{ v.id }}</td>
-                  <td>{{ v.job_no or '' }}</td>
-                  <td>{{ v.customer_name or '' }}</td>
-                  <td>{{ v.phone or '' }}</td>
-                  <td>{{ v.plate_number or '' }}</td>
-                  <td>{{ v.model or '' }}</td>
-                  <td>{% if v.date_in %}{{ v.date_in.strftime("%Y-%m-%d %H:%M") }}{% endif %}</td>
-                  <td class="text-end">
-                    <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}?mode=selected">Άνοιγμα</a>
-                    <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ v.id }}?mode=all">Όλα</a>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% endif %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Job</th>
+            <th>Όνομα</th>
+            <th>Πινακίδα</th>
+            <th>Μοντέλο</th>
+            <th>Τηλέφωνο</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in visits %}
+            <tr>
+              <td>{{ v.id }}</td>
+              <td>{{ v.job_no or '' }}</td>
+              <td>{{ v.customer_name or '' }}</td>
+              <td>{{ v.plate_number or '' }}</td>
+              <td>{{ v.model or '' }}</td>
+              <td>{{ v.phone or '' }}</td>
+              <td class="text-end">
+                <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}?mode=all">Άνοιγμα</a>
+              </td>
+            </tr>
+          {% endfor %}
+          {% if not visits %}
+            <tr><td colspan="7" class="text-muted">Δεν βρέθηκαν εγγραφές.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
