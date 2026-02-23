@@ -564,3 +564,61 @@ async def import_backup(request: Request, db: Session = Depends(get_db), file: U
     db.commit()
 
     return RedirectResponse("/", status_code=302)
+@app.post("/reset-test")
+def reset_test(
+    request: Request,
+    db: Session = Depends(get_db),
+    code: str = Form(""),
+):
+    """
+    Σβήνει ΟΛΑ τα test δεδομένα (ιστορικό):
+    - visits
+    - visit checklist lines
+    ΔΕΝ σβήνει τις κατηγορίες/λίστα ChecklistItem.
+    """
+    # Αν έχεις login system, σεβόμαστε το ίδιο require_user:
+    u = require_user(request, db)
+    if not u and globals().get("HAS_USER", False):
+        return RedirectResponse("/login", status_code=302)
+
+    RESET_CODE = os.getenv("RESET_CODE", "")
+    if not RESET_CODE or code != RESET_CODE:
+        return JSONResponse({"ok": False, "error": "Wrong code"}, status_code=403)
+
+    try:
+        driver = (engine.url.drivername or "").lower()
+
+        # παίρνουμε ακριβή table names από τα SQLAlchemy models (πολύ σημαντικό)
+        visits_table = Visit.__table__.name
+        lines_table = VisitChecklistLine.__table__.name
+
+        if driver.startswith("postgresql"):
+            # TRUNCATE είναι το πιο “σίγουρο” για Postgres
+            # CASCADE για να καθαρίσει σωστά relations
+            db.execute(text(f'TRUNCATE TABLE "{lines_table}" RESTART IDENTITY CASCADE;'))
+            db.execute(text(f'TRUNCATE TABLE "{visits_table}" RESTART IDENTITY CASCADE;'))
+            db.commit()
+        else:
+            # SQLite / άλλες: DELETE + commit
+            db.query(VisitChecklistLine).delete(synchronize_session=False)
+            db.query(Visit).delete(synchronize_session=False)
+            db.commit()
+
+        # επιβεβαίωση
+        remaining_visits = db.query(Visit).count()
+        remaining_lines = db.query(VisitChecklistLine).count()
+
+        return {
+            "ok": True,
+            "message": "Reset completed",
+            "remaining_visits": remaining_visits,
+            "remaining_lines": remaining_lines,
+            "driver": driver,
+        }
+
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(
+            {"ok": False, "error": f"{type(e).__name__}: {e}"},
+            status_code=500,
+        )
