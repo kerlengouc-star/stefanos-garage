@@ -44,6 +44,35 @@ COMPANY = {
 app = FastAPI()
 templates = Jinja2Templates(directory="app/templates")
 
+# =========================
+# DB schema safety (auto-migrate μικρές αλλαγές)
+# =========================
+def _ensure_schema():
+    """Προσθέτει columns που λείπουν (χωρίς Alembic), ώστε να μην σκάει το app μετά από update."""
+    try:
+        with engine.begin() as conn:
+            url = str(engine.url)
+            if url.startswith("sqlite"):
+                # SQLite: έλεγχος columns με PRAGMA
+                cols = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(visits)").fetchall()]
+                if "notes_general" not in cols:
+                    conn.exec_driver_sql("ALTER TABLE visits ADD COLUMN notes_general TEXT")
+            else:
+                # Postgres/MySQL: δοκίμασε IF NOT EXISTS (Postgres OK). Αν αποτύχει, το αγνοούμε.
+                try:
+                    conn.exec_driver_sql("ALTER TABLE visits ADD COLUMN IF NOT EXISTS notes_general TEXT")
+                except Exception:
+                    # fallback: αν ήδη υπάρχει ή DB δεν το υποστηρίζει
+                    pass
+    except Exception as e:
+        # Δεν σταματάμε το startup – απλά θα φανεί στα logs.
+        print("Schema ensure warning:", repr(e))
+
+@app.on_event("startup")
+def _startup_migrate():
+    _ensure_schema()
+
+
 
 # =========================
 # DB
