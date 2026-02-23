@@ -21,71 +21,85 @@
 <form method="post" action="/visits/{{ visit.id }}/save_all" class="no-print">
 <div class="row g-3">
   <div class="col-12">
-    <div class="card">
+    <div class="card mx-auto" style="max-width: 860px;">
       <div class="card-header fw-semibold">Στοιχεία</div>
+      
       <div class="card-body">
-        <div class="mb-2">
-          <label class="form-label">Job No</label>
-          <input class="form-control" name="job_no" value="{{ visit.job_no or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Πινακίδα</label>
-          <input class="form-control" name="plate_number" value="{{ visit.plate_number or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label">VIN</label>
-          <input class="form-control" name="vin" value="{{ visit.vin or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Μοντέλο</label>
-          <input class="form-control" name="model" value="{{ visit.model or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label">KM</label>
-          <input class="form-control" name="km" value="{{ visit.km or '' }}">
-        </div>
-        <hr>
-        <div class="mb-2">
-          <label class="form-label">Όνομα Πελάτη</label>
-          <input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Τηλέφωνο</label>
-          <input class="form-control" name="phone" value="{{ visit.phone or '' }}">
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Email</label>
-          <input class="form-control" name="email" value="{{ visit.email or '' }}">
-        </div>
-        <hr>
-        <div class="mb-2">
-          <label class="form-label">Ημ/νία & Ώρα Άφιξης</label>
-          <div class="d-flex gap-2">
-            <input class="form-control" type="date" name="date_in" value="{{ (visit.date_in.strftime('%Y-%m-%d') if visit.date_in else '') }}">
-            <input class="form-control" type="time" name="time_in" value="{{ (visit.date_in.strftime('%H:%M') if visit.date_in else '') }}">
+        <div class="row g-2">
+          <div class="col-md-3">
+            <label class="form-label">Job No</label>
+            <input class="form-control" name="job_no" value="{{ visit.job_no or '' }}">
           </div>
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Ημ/νία & Ώρα Παράδοσης</label>
-          <div class="d-flex gap-2">
-            <input class="form-control" type="date" name="date_out" value="{{ (visit.date_out.strftime('%Y-%m-%d') if visit.date_out else '') }}">
-            <input class="form-control" type="time" name="time_out" value="{{ (visit.date_out.strftime('%H:%M') if visit.date_out else '') }}">
+          <div class="col-md-3">
+            <label class="form-label">Πινακίδα</label>
+            <input class="form-control" name="plate_number" value="{{ visit.plate_number or '' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">VIN</label>
+            <input class="form-control" name="vin" value="{{ visit.vin or '' }}">
+          </div>
+
+          <div class="col-md-8">
+            <label class="form-label">Μοντέλο</label>
+            <input class="form-control" name="model" value="{{ visit.model or '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">KM</label>
+            <input class="form-control" name="km" value="{{ visit.km or '' }}">
           </div>
         </div>
 
-        <div class="mb-2">
-          <label class="form-label">Απαίτηση / Σχόλια πελάτη</label>
-          <textarea class="form-control" name="customer_complaint" rows="3">{{ visit.customer_complaint or '' }}</textarea>
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Γενικές σημειώσεις</label>
-          <textarea class="form-control" name="notes_general" rows="3">{{ visit.notes_general or '' }}</textarea>
+        <hr class="my-3">
+
+        <div class="row g-2">
+          <div class="col-md-5">
+            <label class="form-label">Όνομα Πελάτη</label>
+            <input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Τηλέφωνο</label>
+            <input class="form-control" name="phone" value="{{ visit.phone or '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Email</label>
+            <input class="form-control" name="email" value="{{ visit.email or '' }}">
+          </div>
         </div>
 
-        <div class="d-flex gap-2 mt-3">
+        <hr class="my-3">
+
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label">Ημ/νία & Ώρα Άφιξης</label>
+            <div class="d-flex gap-2">
+              <input class="form-control" type="date" name="date_in" value="{{ (visit.date_in.strftime('%Y-%m-%d') if visit.date_in else '') }}">
+              <input class="form-control" type="time" name="time_in" value="{{ (visit.date_in.strftime('%H:%M') if visit.date_in else '') }}">
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Ημ/νία & Ώρα Παράδοσης</label>
+            <div class="d-flex gap-2">
+              <input class="form-control" type="date" name="date_out" value="{{ (visit.date_out.strftime('%Y-%m-%d') if visit.date_out else '') }}">
+              <input class="form-control" type="time" name="time_out" value="{{ (visit.date_out.strftime('%H:%M') if visit.date_out else '') }}">
+            </div>
+          </div>
+
+          <div class="col-12">
+            <label class="form-label">Απαίτηση / Σχόλια πελάτη</label>
+            <textarea class="form-control" name="customer_complaint" rows="3">{{ visit.customer_complaint or '' }}</textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Γενικές σημειώσεις</label>
+            <textarea class="form-control" name="notes_general" rows="3">{{ visit.notes_general or '' }}</textarea>
+          </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 mt-3">
           <button class="btn btn-primary">Αποθήκευση</button>
           <a class="btn btn-outline-secondary" href="/">Πίσω</a>
         </div>
+      </div>
+
       </div>
     </div>
 
