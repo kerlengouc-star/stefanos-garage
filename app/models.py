@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey
 from sqlalchemy.orm import relationship
+from datetime import datetime
 
 from .db import Base
 
@@ -11,8 +12,24 @@ class ChecklistItem(Base):
     category = Column(String, index=True, nullable=False)
     name = Column(String, index=True, nullable=False)
 
-    # ✅ Μνήμη: default κωδικός εξαρτήματος για αυτό το item
-    default_parts_code = Column(String, nullable=True)
+
+class PartMemory(Base):
+    """
+    ✅ Μνήμη κωδικού εξαρτήματος ΑΝΑ ΜΟΝΤΕΛΟ + (category + item_name)
+
+    Παράδειγμα:
+    model_key="range rover", category="Φρένα", item_name="Στοπερ μπροστα" -> parts_code="1234"
+    """
+    __tablename__ = "part_memories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    model_key = Column(String, index=True, nullable=False)
+    category = Column(String, index=True, nullable=False)
+    item_name = Column(String, index=True, nullable=False)
+
+    parts_code = Column(String, nullable=False)
+
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class Visit(Base):
@@ -34,7 +51,6 @@ class Visit(Base):
     phone = Column(String, nullable=True)
     email = Column(String, nullable=True)
 
-    # ✅ Αυτό είναι που θες να γράφεις (label θα αλλάξει σε “Απαίτηση πελάτη”)
     customer_complaint = Column(Text, nullable=True)
 
     lines = relationship("VisitChecklistLine", back_populates="visit", cascade="all, delete-orphan")
