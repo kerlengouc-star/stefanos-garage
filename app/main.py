@@ -2,9 +2,9 @@ import os
 import json
 import traceback
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Tuple, List
 
-from fastapi import FastAPI, Request, Depends, Response
+from fastapi import FastAPI, Request, Depends, Response, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, text, func
 
 from .db import get_db, engine
-from .models import Base, ChecklistItem, Visit, VisitChecklistLine
+from .models import Base, ChecklistItem, Visit, VisitChecklistLine, PartMemory
 from .pdf_utils import build_jobcard_pdf
 
 app = FastAPI()
@@ -58,10 +58,14 @@ async def all_exception_handler(request: Request, exc: Exception):
     return PlainTextResponse(msg, status_code=500)
 
 
+def norm_model_key(model: str) -> str:
+    return (model or "").strip().lower()
+
+
 def seed_master_if_empty(db: Session):
     if db.query(ChecklistItem).count() == 0:
         for name in DEFAULT_CHECKLIST:
-            db.add(ChecklistItem(category=DEFAULT_CATEGORY, name=name, default_parts_code=None))
+            db.add(ChecklistItem(category=DEFAULT_CATEGORY, name=name))
         db.commit()
 
 
@@ -69,10 +73,9 @@ def seed_master_if_empty(db: Session):
 def startup():
     Base.metadata.create_all(bind=engine)
 
-    # ✅ Safe schema upgrades (SQLite)
+    # Safe schema upgrades (SQLite) για columns που ήδη χρησιμοποιούνται
     try:
         with engine.connect() as conn:
-            # visit_checklist_lines columns
             cols = conn.execute(text("PRAGMA table_info(visit_checklist_lines)")).fetchall()
             colnames = {c[1] for c in cols}
             if "parts_code" not in colnames:
@@ -80,24 +83,11 @@ def startup():
             if "parts_qty" not in colnames:
                 conn.execute(text("ALTER TABLE visit_checklist_lines ADD COLUMN parts_qty INTEGER NOT NULL DEFAULT 0"))
             if "exclude_from_print" not in colnames:
-                conn.execute(
-                    text(
-                        "ALTER TABLE visit_checklist_lines "
-                        "ADD COLUMN exclude_from_print BOOLEAN NOT NULL DEFAULT 0"
-                    )
-                )
-
-            # checklist_items memory column
-            cols2 = conn.execute(text("PRAGMA table_info(checklist_items)")).fetchall()
-            colnames2 = {c[1] for c in cols2}
-            if "default_parts_code" not in colnames2:
-                conn.execute(text("ALTER TABLE checklist_items ADD COLUMN default_parts_code VARCHAR"))
-
+                conn.execute(text("ALTER TABLE visit_checklist_lines ADD COLUMN exclude_from_print BOOLEAN NOT NULL DEFAULT 0"))
             conn.commit()
     except Exception:
         pass
 
-    # seed
     gen = get_db()
     db = next(gen)
     try:
@@ -161,8 +151,12 @@ def __ping():
     return {"ok": True, "where": "app/main.py"}
 
 
+# =========================
+# BACKUP EXPORT / IMPORT
+# =========================
+
 @app.get("/backup")
-def backup(db: Session = Depends(get_db)):
+def backup_export(db: Session = Depends(get_db)):
     sqlite_path = _sqlite_db_file_path()
     now = datetime.now().strftime("%Y-%m-%d_%H%M")
 
@@ -176,9 +170,11 @@ def backup(db: Session = Depends(get_db)):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    # fallback json export
     visits = db.query(Visit).order_by(Visit.id.asc()).all()
     lines = db.query(VisitChecklistLine).order_by(VisitChecklistLine.id.asc()).all()
     items = db.query(ChecklistItem).order_by(ChecklistItem.id.asc()).all()
+    mems = db.query(PartMemory).order_by(PartMemory.id.asc()).all()
 
     def dt(v):
         return v.isoformat() if v else None
@@ -217,16 +213,20 @@ def backup(db: Session = Depends(get_db)):
             }
             for ln in lines
         ],
-        "checklist_items": [
+        "checklist_items": [{"id": it.id, "category": it.category, "name": it.name} for it in items],
+        "part_memories": [
             {
-                "id": it.id,
-                "category": it.category,
-                "name": it.name,
-                "default_parts_code": it.default_parts_code,
+                "id": m.id,
+                "model_key": m.model_key,
+                "category": m.category,
+                "item_name": m.item_name,
+                "parts_code": m.parts_code,
+                "updated_at": dt(m.updated_at),
             }
-            for it in items
+            for m in mems
         ],
     }
+
     data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     filename = f"stephanou_backup_{now}.json"
     return Response(
@@ -235,6 +235,123 @@ def backup(db: Session = Depends(get_db)):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
+
+@app.post("/backup/import")
+async def backup_import(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """
+    ✅ Import backup .json (fallback) ή .db (SQLite)
+    Στο Render (sqlite file) συνήθως θες JSON import (γιατί το .db file path μπορεί να διαφέρει).
+    """
+    filename = (file.filename or "").lower()
+
+    data = await file.read()
+
+    # If sqlite db uploaded: we can't safely swap file on render here without filesystem guarantees.
+    # So: accept ONLY JSON import for now to μην σπάσουμε περιβάλλον.
+    if filename.endswith(".db"):
+        return PlainTextResponse(
+            "Import .db δεν υποστηρίζεται στο Render με ασφάλεια. Χρησιμοποίησε JSON backup.",
+            status_code=400,
+        )
+
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except Exception:
+        return PlainTextResponse("Το αρχείο δεν είναι έγκυρο JSON.", status_code=400)
+
+    # strategy: clear visits/lines + import, keep checklist_items if already exist, but import memories too
+    # (δεν σβήνουμε checklist_items για να μη χαθεί το master)
+    db.query(VisitChecklistLine).delete()
+    db.query(Visit).delete()
+
+    # import visits
+    visits_by_old_id: Dict[int, Visit] = {}
+    for v in payload.get("visits", []):
+        nv = Visit(
+            job_no=v.get("job_no"),
+            date_in=datetime.fromisoformat(v["date_in"]) if v.get("date_in") else None,
+            date_out=datetime.fromisoformat(v["date_out"]) if v.get("date_out") else None,
+            plate_number=v.get("plate_number"),
+            vin=v.get("vin"),
+            model=v.get("model"),
+            km=v.get("km"),
+            customer_name=v.get("customer_name"),
+            phone=v.get("phone"),
+            email=v.get("email"),
+            customer_complaint=v.get("customer_complaint"),
+        )
+        db.add(nv)
+        db.flush()
+        try:
+            visits_by_old_id[int(v.get("id"))] = nv
+        except Exception:
+            pass
+
+    # import lines
+    for ln in payload.get("visit_checklist_lines", []):
+        old_vid = ln.get("visit_id")
+        if old_vid is None:
+            continue
+        new_visit = visits_by_old_id.get(int(old_vid))
+        if not new_visit:
+            continue
+        nln = VisitChecklistLine(
+            visit_id=new_visit.id,
+            category=ln.get("category"),
+            item_name=ln.get("item_name"),
+            result=ln.get("result"),
+            notes=ln.get("notes"),
+            parts_code=ln.get("parts_code"),
+            parts_qty=int(ln.get("parts_qty") or 0),
+            exclude_from_print=bool(ln.get("exclude_from_print") or False),
+        )
+        db.add(nln)
+
+    # import part memories (replace all)
+    db.query(PartMemory).delete()
+    for m in payload.get("part_memories", []):
+        nm = PartMemory(
+            model_key=(m.get("model_key") or "").strip().lower(),
+            category=(m.get("category") or "").strip(),
+            item_name=(m.get("item_name") or "").strip(),
+            parts_code=(m.get("parts_code") or "").strip(),
+            updated_at=datetime.fromisoformat(m["updated_at"]) if m.get("updated_at") else datetime.utcnow(),
+        )
+        if nm.model_key and nm.category and nm.item_name and nm.parts_code:
+            db.add(nm)
+
+    db.commit()
+    return RedirectResponse("/", status_code=302)
+
+
+# =========================
+# RESET TEST DATA
+# =========================
+
+@app.post("/reset")
+async def reset_data(keep_master: str = Form("1"), db: Session = Depends(get_db)):
+    """
+    keep_master=1: κρατά master checklist + part memories
+    keep_master=0: τα σβήνει όλα (και μνήμες και master)
+    """
+    db.query(VisitChecklistLine).delete()
+    db.query(Visit).delete()
+
+    if keep_master.strip() == "0":
+        db.query(PartMemory).delete()
+        db.query(ChecklistItem).delete()
+
+    db.commit()
+    return RedirectResponse("/", status_code=302)
+
+
+# =========================
+# INDEX + SEARCH
+# =========================
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, q: str = "", db: Session = Depends(get_db)):
@@ -266,11 +383,14 @@ def search(request: Request, q: str = "", db: Session = Depends(get_db)):
     return index(request=request, q=q, db=db)
 
 
+# =========================
+# VISITS
+# =========================
+
 @app.post("/visits/new")
 def create_visit(db: Session = Depends(get_db)):
     seed_master_if_empty(db)
 
-    # ✅ ΜΗΝ βάζεις server time εδώ. Θα το βάλει ο browser στη φόρμα.
     v = Visit(
         job_no=f"JOB-{(db.query(Visit).count() + 1)}",
         date_in=None,
@@ -297,8 +417,7 @@ def create_visit(db: Session = Depends(get_db)):
                 item_name=it.name,
                 result="OK",
                 notes="",
-                # ✅ Προ-γέμισμα από μνήμη (default_parts_code)
-                parts_code=(it.default_parts_code or ""),
+                parts_code="",
                 parts_qty=0,
                 exclude_from_print=False,
             )
@@ -308,7 +427,13 @@ def create_visit(db: Session = Depends(get_db)):
 
 
 @app.get("/visits/{visit_id}", response_class=HTMLResponse)
-def visit_page(visit_id: int, request: Request, mode: str = "all", db: Session = Depends(get_db)):
+def visit_page(
+    visit_id: int,
+    request: Request,
+    mode: str = "all",
+    cats: str = "",
+    db: Session = Depends(get_db),
+):
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
@@ -320,15 +445,58 @@ def visit_page(visit_id: int, request: Request, mode: str = "all", db: Session =
         .all()
     )
 
+    # ✅ Category list for filter UI
+    categories = sorted({(ln.category or "").strip() for ln in all_lines if (ln.category or "").strip()})
+
+    selected_cats: List[str] = []
+    cats_raw = (cats or "").strip()
+    if cats_raw:
+        selected_cats = [c.strip() for c in cats_raw.split(",") if c.strip()]
+    else:
+        # default: show all
+        selected_cats = []
+
+    # ✅ prefill parts_code from PartMemory based on visit.model (only if empty)
+    mk = norm_model_key(visit.model or "")
+    mem_map: Dict[Tuple[str, str], str] = {}
+    if mk:
+        mems = db.query(PartMemory).filter(PartMemory.model_key == mk).all()
+        for m in mems:
+            mem_map[(m.category, m.item_name)] = m.parts_code
+
+        for ln in all_lines:
+            if (ln.parts_code or "").strip():
+                continue
+            key = ((ln.category or "").strip(), (ln.item_name or "").strip())
+            if key in mem_map:
+                ln.parts_code = mem_map[key]
+        db.commit()
+
     mode = (mode or "all").lower().strip()
     if mode == "selected":
-        selected = [ln for ln in all_lines if is_selected_line(ln)]
-        lines = selected if selected else all_lines
+        filtered = [ln for ln in all_lines if is_selected_line(ln)]
+        lines0 = filtered if filtered else all_lines
     else:
         mode = "all"
-        lines = all_lines
+        lines0 = all_lines
 
-    return templates.TemplateResponse("visit.html", {"request": request, "visit": visit, "lines": lines, "mode": mode})
+    # apply category filter for display
+    if selected_cats:
+        lines = [ln for ln in lines0 if (ln.category or "").strip() in selected_cats]
+    else:
+        lines = lines0
+
+    return templates.TemplateResponse(
+        "visit.html",
+        {
+            "request": request,
+            "visit": visit,
+            "lines": lines,
+            "mode": mode,
+            "categories": categories,
+            "selected_cats": selected_cats,
+        },
+    )
 
 
 @app.post("/visits/{visit_id}/save_all")
@@ -353,9 +521,9 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
     visit.customer_name = (form.get("customer_name") or "").strip()
     visit.phone = (form.get("phone") or "").strip()
     visit.email = (form.get("email") or "").strip()
-
-    # ✅ κρατά σωστά αυτό που γράφεις (μνήμη μέσα στο visit)
     visit.customer_complaint = (form.get("customer_complaint") or "").strip()
+
+    mk = norm_model_key(visit.model or "")
 
     all_lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
 
@@ -378,16 +546,26 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
 
         ln.exclude_from_print = (form.get(f"exclude_{ln.id}") == "1")
 
-        # ✅ Μνήμη κωδικού: αν γράφτηκε parts_code, το κρατάμε στο master item
+        # ✅ Μνήμη κωδικού ΑΝΑ ΜΟΝΤΕΛΟ + item
         pc = (ln.parts_code or "").strip()
-        if pc:
-            it = (
-                db.query(ChecklistItem)
-                .filter(ChecklistItem.category == (ln.category or ""), ChecklistItem.name == (ln.item_name or ""))
+        cat = (ln.category or "").strip()
+        nm = (ln.item_name or "").strip()
+        if mk and pc and cat and nm:
+            mem = (
+                db.query(PartMemory)
+                .filter(
+                    PartMemory.model_key == mk,
+                    PartMemory.category == cat,
+                    PartMemory.item_name == nm,
+                )
                 .first()
             )
-            if it:
-                it.default_parts_code = pc
+            if not mem:
+                mem = PartMemory(model_key=mk, category=cat, item_name=nm, parts_code=pc, updated_at=datetime.utcnow())
+                db.add(mem)
+            else:
+                mem.parts_code = pc
+                mem.updated_at = datetime.utcnow()
 
     action = (form.get("action") or "").strip().lower()
     if action == "add_line":
@@ -408,7 +586,7 @@ async def save_all(visit_id: int, request: Request, db: Session = Depends(get_db
                 )
             )
             if add_master:
-                db.add(ChecklistItem(category=cat, name=name, default_parts_code=None))
+                db.add(ChecklistItem(category=cat, name=name))
 
     db.commit()
 
@@ -501,7 +679,7 @@ async def checklist_add(request: Request, db: Session = Depends(get_db)):
     cat = (form.get("category") or "").strip()
     name = (form.get("name") or "").strip()
     if cat and name:
-        db.add(ChecklistItem(category=cat, name=name, default_parts_code=None))
+        db.add(ChecklistItem(category=cat, name=name))
         db.commit()
     return RedirectResponse("/checklist", status_code=302)
 
@@ -520,27 +698,3 @@ async def checklist_delete(request: Request, db: Session = Depends(get_db)):
         db.delete(it)
         db.commit()
     return RedirectResponse("/checklist", status_code=302)
-
-
-@app.get("/history", response_class=HTMLResponse)
-def history_page(request: Request, date_from: str = "", date_to: str = "", db: Session = Depends(get_db)):
-    q = db.query(Visit)
-
-    df = (date_from or "").strip()
-    dt = (date_to or "").strip()
-    if df:
-        try:
-            q = q.filter(Visit.date_in >= datetime.fromisoformat(df + "T00:00:00"))
-        except Exception:
-            pass
-    if dt:
-        try:
-            q = q.filter(Visit.date_in <= datetime.fromisoformat(dt + "T23:59:59"))
-        except Exception:
-            pass
-
-    visits = q.order_by(Visit.id.desc()).limit(500).all()
-    return templates.TemplateResponse(
-        "history.html",
-        {"request": request, "visits": visits, "date_from": df, "date_to": dt},
-    )
