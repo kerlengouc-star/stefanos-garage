@@ -1,80 +1,49 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% block content %}
-
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <div class="d-flex gap-2 align-items-center">
-    <a class="btn btn-outline-secondary btn-sm" href="/">← Πίσω</a>
-    <div class="fw-semibold">Ιστορικό Επισκέψεων</div>
-  </div>
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <div class="fs-4 fw-semibold">Ιστορικό</div>
+  <form method="get" action="/history" class="d-flex flex-wrap gap-2 ms-auto">
+    <div>
+      <label class="form-label mb-0 small-muted">Από</label>
+      <input class="form-control" type="date" name="from_date" value="{{ from_date }}">
+    </div>
+    <div>
+      <label class="form-label mb-0 small-muted">Μέχρι</label>
+      <input class="form-control" type="date" name="to_date" value="{{ to_date }}">
+    </div>
+    <div>
+      <label class="form-label mb-0 small-muted">Search</label>
+      <input class="form-control" name="q" value="{{ q }}" placeholder="όνομα, πινακίδα, κτλ">
+    </div>
+    <div class="align-self-end">
+      <button class="btn btn-primary">Filter</button>
+    </div>
+  </form>
 </div>
 
-<form class="card shadow-sm mb-3" method="get" action="/history">
-  <div class="card-body">
-    <div class="row g-2">
-      <div class="col-md-3">
-        <label class="form-label">Από (Ημ/νία)</label>
-        <input class="form-control" type="date" name="from_date" value="{{ from_date or '' }}">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Έως (Ημ/νία)</label>
-        <input class="form-control" type="date" name="to_date" value="{{ to_date or '' }}">
-      </div>
-      <div class="col-md-6">
-        <label class="form-label">Αναζήτηση (προαιρετικό)</label>
-        <input class="form-control" name="q" value="{{ q or '' }}"
-               placeholder="όνομα / πινακίδα / τηλέφωνο / email / μοντέλο / VIN / job">
-      </div>
-
-      <div class="col-12 d-flex gap-2 mt-2">
-        <button class="btn btn-primary" type="submit">Φιλτράρισμα</button>
-        <a class="btn btn-outline-secondary" href="/history">Καθαρισμός</a>
-      </div>
-    </div>
-  </div>
-</form>
-
-<div class="card shadow-sm">
-  <div class="card-body">
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Job</th>
-            <th>Ημ/νία Άφιξης</th>
-            <th>Όνομα</th>
-            <th>Πινακίδα</th>
-            <th>Μοντέλο</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for v in visits %}
-            <tr>
-              <td>{{ v.id }}</td>
-              <td>{{ v.job_no or '' }}</td>
-              <td>
-                {% if v.date_in %}
-                  {{ v.date_in.strftime("%Y-%m-%d %H:%M") }}
-                {% endif %}
-              </td>
-              <td>{{ v.customer_name or '' }}</td>
-              <td>{{ v.plate_number or '' }}</td>
-              <td>{{ v.model or '' }}</td>
-              <td class="text-end">
-                <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}?mode=selected">Άνοιγμα</a>
-                <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}/pdf" target="_blank">PDF</a>
-                <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}/print" target="_blank">Print</a>
-              </td>
-            </tr>
-          {% endfor %}
-          {% if not visits %}
-            <tr><td colspan="7" class="text-muted">Δεν βρέθηκαν εγγραφές.</td></tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
+<div class="card">
+  <div class="card-header fw-semibold">Επισκέψεις ({{ visits|length }})</div>
+  <div class="card-body p-0">
+    <table class="table table-striped mb-0">
+      <thead>
+        <tr>
+          <th>ID</th><th>Job</th><th>Πελάτης</th><th>Πινακίδα</th><th>Άφιξη</th><th>Παράδοση</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in visits %}
+        <tr>
+          <td class="mono">{{ v.id }}</td>
+          <td class="mono">{{ v.job_no or '' }}</td>
+          <td>{{ v.customer_name or '' }}</td>
+          <td class="mono">{{ v.plate_number or '' }}</td>
+          <td class="mono">{{ (v.date_in.strftime('%d/%m/%Y %H:%M') if v.date_in else '') }}</td>
+          <td class="mono">{{ (v.date_out.strftime('%d/%m/%Y %H:%M') if v.date_out else '') }}</td>
+          <td><a class="btn btn-sm btn-primary" href="/visits/{{ v.id }}">Άνοιγμα</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
-
 {% endblock %}

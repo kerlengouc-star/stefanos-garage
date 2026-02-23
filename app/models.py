@@ -53,6 +53,10 @@ class Visit(Base):
 
     customer_complaint = Column(Text, nullable=True)
 
+    # Γενικές σημειώσεις (χρήσιμο για εκτυπώσεις/ιστορικό)
+    # Στο UI/handlers γίνεται χρήση του visit.notes_general, οπότε πρέπει να υπάρχει και στη βάση.
+    notes_general = Column(Text, nullable=True)
+
     lines = relationship("VisitChecklistLine", back_populates="visit", cascade="all, delete-orphan")
 
 

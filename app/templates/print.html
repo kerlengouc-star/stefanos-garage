@@ -1,89 +1,63 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Print Job {{ visit.job_no or visit.id }}</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 24px; }
-    h2,h3,h4 { margin: 0 0 8px 0; }
-    .row { display:flex; gap: 24px; flex-wrap: wrap; margin-bottom: 8px; }
-    .box { border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
-    table { width:100%; border-collapse: collapse; margin-top: 10px; }
-    th,td { border-bottom: 1px solid #ddd; padding: 6px 8px; font-size: 13px; }
-    th { text-align:left; background:#f6f6f6; }
-    .small { font-size: 12px; color:#444; }
-    .toolbar { margin-bottom: 14px; }
-    .btn { display:inline-block; padding: 8px 12px; border:1px solid #333; border-radius: 6px; text-decoration:none; color:#000; margin-right: 8px;}
-    @media print { .toolbar { display:none; } }
-  </style>
-</head>
-<body>
+{% extends 'base.html' %}
+{% block content %}
+<div class="no-print d-flex gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="/visits/{{ visit.id }}">Πίσω</a>
+  <button class="btn btn-primary" onclick="window.print()">Print</button>
+  <a class="btn btn-outline-primary" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
+</div>
 
-  <div class="toolbar">
-    <a class="btn" href="#" onclick="window.print(); return false;">Print</a>
-    <a class="btn" href="/visits/{{ visit.id }}?mode=selected">Back</a>
+<div class="card">
+  <div class="card-body">
+    <div class="fs-4 fw-semibold mb-2">Job Card – Επίσκεψη #{{ visit.id }}</div>
+    <div class="row">
+      <div class="col-md-6">
+        <div><b>Job:</b> <span class="mono">{{ visit.job_no or '' }}</span></div>
+        <div><b>Πινακίδα:</b> <span class="mono">{{ visit.plate_number or '' }}</span></div>
+        <div><b>VIN:</b> <span class="mono">{{ visit.vin or '' }}</span></div>
+        <div><b>Μοντέλο:</b> {{ visit.model or '' }}</div>
+        <div><b>KM:</b> {{ visit.km or '' }}</div>
+      </div>
+      <div class="col-md-6">
+        <div><b>Πελάτης:</b> {{ visit.customer_name or '' }}</div>
+        <div><b>Τηλέφωνο:</b> <span class="mono">{{ visit.phone or '' }}</span></div>
+        <div><b>Email:</b> <span class="mono">{{ visit.email or '' }}</span></div>
+        <div><b>Άφιξη:</b> <span class="mono">{{ visit.date_in.strftime('%d/%m/%Y %H:%M') if visit.date_in else '' }}</span></div>
+        <div><b>Παράδοση:</b> <span class="mono">{{ visit.date_out.strftime('%d/%m/%Y %H:%M') if visit.date_out else '' }}</span></div>
+      </div>
+    </div>
+
+    {% if visit.customer_complaint %}
+    <hr>
+    <div><b>Απαίτηση / Σχόλια:</b></div>
+    <div style="white-space: pre-wrap">{{ visit.customer_complaint }}</div>
+    {% endif %}
+
+    <hr>
+    <div class="fw-semibold mb-2">Επιλεγμένες Εργασίες</div>
+    <table class="table table-sm">
+      <thead>
+        <tr>
+          <th>Κατηγορία</th>
+          <th>Εργασία</th>
+          <th>Status</th>
+          <th>Parts No</th>
+          <th>Qty</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ln in lines %}
+        <tr>
+          <td>{{ ln.category or '' }}</td>
+          <td>{{ ln.item_name or '' }}</td>
+          <td class="mono">{{ (ln.result or '') }}</td>
+          <td class="mono">{{ ln.parts_code or '' }}</td>
+          <td class="mono">{{ ln.parts_qty or 0 }}</td>
+          <td>{{ ln.notes or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
-
-  <h2>O&S STEPHANOU LTD</h2>
-  <div class="small">Michael Paridi 3, Palouriotissa • Tel: 22436990-22436992 • Fax: 22437001 • Email: osstephanou@gmail.com</div>
-
-  <hr>
-
-  <h3>JOB: {{ visit.job_no or visit.id }}</h3>
-
-  <div class="row">
-    <div class="box">
-      <div><strong>Αρ. Εγγραφής:</strong> {{ visit.plate_number or '' }}</div>
-      <div><strong>VIN:</strong> {{ visit.vin or '' }}</div>
-      <div><strong>Μοντέλο:</strong> {{ visit.model or '' }}</div>
-      <div><strong>KM:</strong> {{ visit.km or '' }}</div>
-    </div>
-
-    <div class="box">
-      <div><strong>Όνομα:</strong> {{ visit.customer_name or '' }}</div>
-      <div><strong>Τηλέφωνο:</strong> {{ visit.phone or '' }}</div>
-      <div><strong>Email:</strong> {{ visit.email or '' }}</div>
-    </div>
-
-    <div class="box">
-      <div><strong>Άφιξη:</strong> {{ (visit.date_in|string)[:16] if visit.date_in else '' }}</div>
-      <div><strong>Παράδοση:</strong> {{ (visit.date_out|string)[:16] if visit.date_out else '' }}</div>
-    </div>
-  </div>
-
-  {% if visit.customer_complaint %}
-    <div class="box">
-      <strong>Παράπονο / Σχόλια:</strong>
-      <div>{{ visit.customer_complaint }}</div>
-    </div>
-  {% endif %}
-
-  <h4 style="margin-top:16px;">Επιλεγμένες εργασίες (CHECK/REPAIR/PARTS)</h4>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Κατηγορία</th>
-        <th>Εργασία</th>
-        <th>Status</th>
-        <th>Parts No</th>
-        <th>Qty</th>
-        <th>Σημείωση</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for ln in lines %}
-      <tr>
-        <td>{{ ln.category }}</td>
-        <td>{{ ln.item_name }}</td>
-        <td>{{ ln.result }}</td>
-        <td>{{ ln.parts_code or '' }}</td>
-        <td>{{ ln.parts_qty or 0 }}</td>
-        <td>{{ ln.notes or '' }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-</body>
-</html>
+</div>
+{% endblock %}

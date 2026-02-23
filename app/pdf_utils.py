@@ -97,7 +97,7 @@ def build_jobcard_pdf(company: dict, visit: dict, lines: list[dict]) -> bytes:
     complaint = (visit.get("customer_complaint") or "").strip()
     if complaint:
         c.setFont(FONT, 10)
-        c.drawString(x, y, "Παράπονο / Σχόλια πελάτη:")
+        c.drawString(x, y, "Απαίτηση / Σχόλια πελάτη:")
         y -= 14
         c.setFont(FONT, 9)
         # wrap basic

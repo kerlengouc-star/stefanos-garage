@@ -1,154 +1,174 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% block content %}
-
-<style>
-  .topbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
-  .btn { display:inline-block; padding:8px 12px; border:1px solid #bbb; border-radius:8px; text-decoration:none; background:#f7f7f7; color:#111; }
-  .btn-primary { background:#111; color:#fff; border-color:#111; }
-  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
-  .card { border:1px solid #ddd; border-radius:12px; padding:12px; background:#fff; }
-  .row { display:grid; grid-template-columns: 160px 1fr; gap:10px; align-items:center; margin:8px 0; }
-  .row input, .row textarea, .row select { width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; }
-  .cat { margin-top:18px; border-top:1px dashed #ddd; padding-top:12px; }
-  .cat h3 { margin:0 0 10px 0; font-size:16px; }
-  table { width:100%; border-collapse:collapse; }
-  th, td { border-bottom:1px solid #eee; padding:8px; vertical-align:top; }
-  th { text-align:left; font-size:13px; color:#444; }
-  .small { width:140px; }
-  .small2 { width:110px; }
-  .muted { color:#666; font-size:13px; }
-</style>
-
-<div class="topbar">
-  <button type="submit" form="visitForm" class="btn btn-primary">Save</button>
-
-  <!-- Αυτά τα links θα δουλέψουν μόνο αν υπάρχουν ήδη τα endpoints σου -->
-  <a class="btn" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
-  <a class="btn" href="/visits/{{ visit.id }}/print" target="_blank">Print</a>
-  <a class="btn" href="/history">Ιστορικό</a>
-  <a class="btn" href="/backup">Backup</a>
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <div class="fs-4 fw-semibold">Επίσκεψη #{{ visit.id }}</div>
+  <div class="small-muted">Mode: {{ mode }}</div>
+  <div class="ms-auto d-flex gap-2 no-print">
+    <a class="btn btn-outline-secondary" href="/visits/{{ visit.id }}?mode=all">Όλα</a>
+    <a class="btn btn-outline-secondary" href="/visits/{{ visit.id }}?mode=selected">Μόνο επιλεγμένα</a>
+    <a class="btn btn-outline-primary" href="/visits/{{ visit.id }}/print" target="_blank">Print View</a>
+    <a class="btn btn-outline-primary" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
+  </div>
 </div>
 
-<form id="visitForm" method="post" action="/visits/{{ visit.id }}/save_all">
-  <div class="grid">
+{% if request.query_params.get('email_sent') %}
+  <div class="alert alert-success">Το email στάλθηκε.</div>
+{% endif %}
+{% if request.query_params.get('email_error') %}
+  <div class="alert alert-danger">Σφάλμα αποστολής email (έλεγξε SMTP env vars).</div>
+{% endif %}
 
+<form method="post" action="/visits/{{ visit.id }}/save_all" class="no-print">
+<div class="row g-3">
+  <div class="col-12">
     <div class="card">
-      <h2 style="margin:0 0 10px 0;">Στοιχεία Πελάτη / Οχήματος</h2>
-
-      <div class="row"><div>Job No</div><input name="job_no" value="{{ visit.job_no or '' }}"></div>
-      <div class="row"><div>Αρ. Εγγραφής</div><input name="plate_number" value="{{ visit.plate_number or '' }}"></div>
-      <div class="row"><div>Αρ. Πλαισίου</div><input name="vin" value="{{ visit.vin or '' }}"></div>
-      <div class="row"><div>Όνομα</div><input name="customer_name" value="{{ visit.customer_name or '' }}"></div>
-      <div class="row"><div>Τηλέφωνο</div><input name="phone" value="{{ visit.phone or '' }}"></div>
-      <div class="row"><div>Email</div><input name="email" value="{{ visit.email or '' }}"></div>
-      <div class="row"><div>Μοντέλο</div><input name="model" value="{{ visit.model or '' }}"></div>
-      <div class="row"><div>KM</div><input name="km" value="{{ visit.km or '' }}"></div>
-
-      <div class="row">
-        <div>Ημ/νία Παραλαβής</div>
-        <input id="date_in" name="date_in" value="{{ visit.date_in or '' }}" placeholder="YYYY-MM-DD">
-      </div>
-      <div class="row">
-        <div>Ώρα Παραλαβής</div>
-        <input id="time_in" name="time_in" value="{{ visit.time_in or '' }}" placeholder="HH:MM">
-      </div>
-
-      <div class="row">
-        <div>Ημ/νία Παράδοσης</div>
-        <input id="date_out" name="date_out" value="{{ visit.date_out or '' }}" placeholder="YYYY-MM-DD">
-      </div>
-      <div class="row">
-        <div>Ώρα Παράδοσης</div>
-        <input id="time_out" name="time_out" value="{{ visit.time_out or '' }}" placeholder="HH:MM">
-      </div>
-
-      <div class="row">
-        <div>Απαίτηση πελάτη</div>
-        <textarea name="customer_complaint" rows="3">{{ visit.customer_complaint or '' }}</textarea>
-      </div>
-
-      <div class="row">
-        <div>Σημειώσεις</div>
-        <textarea name="notes_general" rows="3">{{ visit.notes_general or '' }}</textarea>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2 style="margin:0 0 6px 0;">Επιλογές / Κατηγορίες</h2>
-      <div class="muted">
-        Αν δεν βλέπεις κατηγορίες εδώ, τότε το backend δεν στέλνει τη λίστα <b>items</b>.
-        (Αλλά αφού το /checklist δείχνει, συνήθως είναι μόνο θέμα template.)
-      </div>
-
-      {% set ns = namespace(last_cat=None) %}
-      {% for it in items %}
-        {% if ns.last_cat != it.category %}
-          {% set ns.last_cat = it.category %}
-          <div class="cat">
-            <h3>{{ it.category }}</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>✔</th>
-                  <th>Εργασία</th>
-                  <th class="small">Κωδικός εξαρτήματος</th>
-                  <th class="small2">Ποσότητα</th>
-                  <th>Σημειώσεις</th>
-                </tr>
-              </thead>
-              <tbody>
-        {% endif %}
-
-        {% set ln = line_by_item.get(it.id) %}
-        <tr>
-          <td>
-            <input type="checkbox" name="chk_{{ it.id }}" {% if ln and ln.checked %}checked{% endif %}>
-          </td>
-          <td><b>{{ it.name }}</b></td>
-          <td>
-            <input name="parts_code_{{ it.id }}" value="{{ (ln.parts_code if ln else '') or '' }}">
-          </td>
-          <td>
-            <input name="parts_qty_{{ it.id }}" value="{{ (ln.parts_qty if ln else '') or '' }}">
-          </td>
-          <td>
-            <input name="notes_{{ it.id }}" value="{{ (ln.notes if ln else '') or '' }}">
-          </td>
-        </tr>
-
-        {% set next = items[loop.index] if not loop.last else None %}
-        {% if loop.last or (next and next.category != it.category) %}
-              </tbody>
-            </table>
+      <div class="card-header fw-semibold">Στοιχεία</div>
+      <div class="card-body">
+        <div class="mb-2">
+          <label class="form-label">Job No</label>
+          <input class="form-control" name="job_no" value="{{ visit.job_no or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Πινακίδα</label>
+          <input class="form-control" name="plate_number" value="{{ visit.plate_number or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">VIN</label>
+          <input class="form-control" name="vin" value="{{ visit.vin or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Μοντέλο</label>
+          <input class="form-control" name="model" value="{{ visit.model or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">KM</label>
+          <input class="form-control" name="km" value="{{ visit.km or '' }}">
+        </div>
+        <hr>
+        <div class="mb-2">
+          <label class="form-label">Όνομα Πελάτη</label>
+          <input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Τηλέφωνο</label>
+          <input class="form-control" name="phone" value="{{ visit.phone or '' }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Email</label>
+          <input class="form-control" name="email" value="{{ visit.email or '' }}">
+        </div>
+        <hr>
+        <div class="mb-2">
+          <label class="form-label">Ημ/νία & Ώρα Άφιξης</label>
+          <div class="d-flex gap-2">
+            <input class="form-control" type="date" name="date_in" value="{{ (visit.date_in.strftime('%Y-%m-%d') if visit.date_in else '') }}">
+            <input class="form-control" type="time" name="time_in" value="{{ (visit.date_in.strftime('%H:%M') if visit.date_in else '') }}">
           </div>
-        {% endif %}
-      {% endfor %}
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Ημ/νία & Ώρα Παράδοσης</label>
+          <div class="d-flex gap-2">
+            <input class="form-control" type="date" name="date_out" value="{{ (visit.date_out.strftime('%Y-%m-%d') if visit.date_out else '') }}">
+            <input class="form-control" type="time" name="time_out" value="{{ (visit.date_out.strftime('%H:%M') if visit.date_out else '') }}">
+          </div>
+        </div>
 
-      <hr style="margin:14px 0;">
+        <div class="mb-2">
+          <label class="form-label">Απαίτηση / Σχόλια πελάτη</label>
+          <textarea class="form-control" name="customer_complaint" rows="3">{{ visit.customer_complaint or '' }}</textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Γενικές σημειώσεις</label>
+          <textarea class="form-control" name="notes_general" rows="3">{{ visit.notes_general or '' }}</textarea>
+        </div>
 
-      <h3 style="margin:0 0 8px 0;">+ Προσθήκη νέας κατηγορίας / εργασίας</h3>
-      <div class="row"><div>Κατηγορία</div><input name="new_category" placeholder="π.χ. Φρένα"></div>
-      <div class="row"><div>Εργασία</div><input name="new_item_name" placeholder="π.χ. Αλλαγή τακάκια"></div>
-      <div class="muted">Γράψε και πάτα <b>Save</b>. Δεν θα σου σβήσει ό,τι έχεις ήδη τσεκάρει.</div>
+        <div class="d-flex gap-2 mt-3">
+          <button class="btn btn-primary">Αποθήκευση</button>
+          <a class="btn btn-outline-secondary" href="/">Πίσω</a>
+        </div>
+      </div>
     </div>
 
+    <div class="card mt-3">
+      <div class="card-header fw-semibold">Προσθήκη νέας γραμμής checklist (για αυτή την επίσκεψη)</div>
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-6">
+            <input class="form-control" name="new_category" placeholder="Κατηγορία">
+          </div>
+          <div class="col-6">
+            <input class="form-control" name="new_item" placeholder="Εργασία">
+          </div>
+        </div>
+        <div class="small-muted mt-2">Αν υπάρχει ήδη στο checklist, δεν θα διπλομπεί σαν item – αλλά θα προστεθεί σαν γραμμή στην επίσκεψη.</div>
+      </div>
+    </div>
   </div>
+
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header d-flex align-items-center">
+        <div class="fw-semibold">Checklist</div>
+        <div class="ms-auto small-muted">Tip: συμπλήρωσε Parts No για να “θυμάται” ανά Μοντέλο.</div>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr>
+              <th style="width: 26%">Κατηγορία</th>
+              <th style="width: 24%">Εργασία</th>
+              <th style="width: 10%">Status</th>
+              <th style="width: 16%">Parts No</th>
+              <th style="width: 8%">Qty</th>
+              <th>Notes</th>
+              <th style="width: 6%" class="text-center">NoPrint</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ln in lines %}
+              {% set rid = ln.id|string %}
+              <tr>
+                <td>{{ ln.category or '' }}</td>
+                <td>{{ ln.item_name or '' }}</td>
+                <td>
+                  <select class="form-select form-select-sm" name="result_{{ rid }}">
+                    {% for opt in ['OK','CHECK','REPAIR'] %}
+                      <option value="{{ opt }}" {% if (ln.result or 'OK')|upper == opt %}selected{% endif %}>{{ opt }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  {% set memkey = (ln.category or '', ln.item_name or '') %}
+                  <input class="form-control form-control-sm mono" name="parts_code_{{ rid }}" value="{{ ln.parts_code or mem.get(memkey,'') }}" placeholder="Code">
+                </td>
+                <td><input class="form-control form-control-sm mono" name="parts_qty_{{ rid }}" value="{{ ln.parts_qty or 0 }}" style="max-width:90px"></td>
+                <td><input class="form-control form-control-sm" name="notes_{{ rid }}" value="{{ ln.notes or '' }}" placeholder="Σημείωση"></td>
+                <td class="text-center"><input class="form-check-input" type="checkbox" name="exclude_{{ rid }}" {% if ln.exclude_from_print %}checked{% endif %}></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mt-3 no-print">
+      <div class="card-header fw-semibold">Αποστολή PDF με Email</div>
+      <div class="card-body">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          <div>Προς: <span class="mono">{{ visit.email or '-' }}</span></div>
+          <form method="post" action="/visits/{{ visit.id }}/email" class="ms-auto">
+            <button class="btn btn-outline-success" {% if not visit.email %}disabled{% endif %}>Send Email</button>
+          </form>
+        </div>
+        <div class="small-muted mt-2">Απαιτούνται env vars: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM</div>
+      </div>
+    </div>
+  </div>
+</div>
 </form>
 
-<script>
-  // ✅ Πάρε ημερομηνία/ώρα από ΤΟΝ ΥΠΟΛΟΓΙΣΤΗ (browser) για να ταιριάζει με το PC σου.
-  (function(){
-    function pad(n){ return (n<10?'0':'')+n; }
-    const now = new Date();
-    const d = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate());
-    const t = pad(now.getHours()) + ":" + pad(now.getMinutes());
-
-    const dateIn = document.getElementById("date_in");
-    const timeIn = document.getElementById("time_in");
-
-    if (dateIn && !dateIn.value) dateIn.value = d;
-    if (timeIn && !timeIn.value) timeIn.value = t;
-  })();
-</script>
-
+<div class="alert alert-info mt-3">
+  <div class="fw-semibold">Τι εμφανίζει το PDF;</div>
+  <div>Μόνο γραμμές που είναι <span class="mono">CHECK</span> ή <span class="mono">REPAIR</span> ή έχουν <span class="mono">Qty &gt; 0</span> ή έχουν Parts No ή Notes, και που ΔΕΝ έχουν τικαρισμένο το NoPrint.</div>
+</div>
 {% endblock %}

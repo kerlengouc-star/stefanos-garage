@@ -1,108 +1,64 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% block content %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <form method="get" action="/" class="d-flex gap-2">
+    <input class="form-control" style="min-width:280px" name="q" value="{{ q }}" placeholder="Αναζήτηση: όνομα, πινακίδα, τηλέφωνο, email, μοντέλο, VIN, job">
+    <button class="btn btn-primary">Αναζήτηση</button>
+  </form>
 
-<div class="card shadow-sm mb-3">
+  <form method="post" action="/visits/new" class="ms-auto">
+    <button class="btn btn-success">+ Νέα Επίσκεψη</button>
+  </form>
+</div>
+
+{% if request.query_params.get('reset_error') %}
+  <div class="alert alert-danger">Λάθος κωδικός reset.</div>
+{% endif %}
+
+<div class="card mb-3 no-print">
   <div class="card-body">
-    <div class="d-flex flex-wrap gap-2 align-items-center">
-
-      <!-- Backup export -->
-      <a class="btn btn-outline-primary btn-sm" href="/backup">Backup</a>
-
-      <!-- Import backup (δέχεται μόνο JSON) -->
-      <form action="/backup/import" method="post" enctype="multipart/form-data" style="display:inline;">
-        <input type="file" name="file" id="backupFile" style="display:none;" accept=".json,application/json"
-               onchange="this.form.submit()">
-        <button type="button" class="btn btn-outline-primary btn-sm"
-                onclick="document.getElementById('backupFile').click()">
-          Import Backup
-        </button>
-      </form>
-
-      <!-- Reset tests (με κωδικό) -->
-      <form action="/reset" method="post" style="display:inline;" onsubmit="return askResetPass();">
-        <input type="hidden" name="keep_master" value="1">
-        <input type="hidden" name="reset_password" id="reset_password">
-        <button class="btn btn-outline-danger btn-sm" type="submit">Reset Tests</button>
-      </form>
-
-      <!-- New visit -->
-      <form action="/visits/new" method="post" style="display:inline;">
-        <button class="btn btn-primary btn-sm" type="submit">+ Νέα Επίσκεψη</button>
-      </form>
-
-      <!-- Checklist -->
-      <a class="btn btn-outline-secondary btn-sm" href="/checklist">Checklist</a>
-
-      <div class="flex-grow-1"></div>
-
-      <!-- Search -->
-      <form class="d-flex gap-2" method="get" action="/search" style="min-width: 380px; max-width: 760px; width: 100%;">
-        <input class="form-control form-control-sm" name="q" value="{{ q or '' }}"
-               placeholder="Αναζήτηση: Όνομα, Πινακίδα, Τηλέφωνο, Email, Μοντέλο, VIN, Job...">
-        <button class="btn btn-outline-secondary btn-sm" type="submit">Search</button>
-      </form>
-
+    <div class="d-flex flex-wrap gap-2 align-items-end">
+      <div>
+        <div class="small-muted">Reset (σβήνει ΜΟΝΟ τις επισκέψεις/γραμμές, όχι checklist / part memories)</div>
+        <form method="post" action="/reset" class="d-flex gap-2">
+          <input class="form-control" name="reset_password" placeholder="RESET CODE">
+          <button class="btn btn-outline-danger">Reset</button>
+        </form>
+      </div>
+      <div class="ms-auto small-muted">Σύνολο εμφανιζόμενων: {{ visits|length }}</div>
     </div>
   </div>
 </div>
 
-<div class="card shadow-sm">
-  <div class="card-body">
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Job</th>
-            <th>Ημ/νία Άφιξης</th>
-            <th>Όνομα</th>
-            <th>Πινακίδα</th>
-            <th>Μοντέλο</th>
-            <th class="text-end">Ενέργειες</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for v in visits %}
-          <tr>
-            <td>{{ v.id }}</td>
-            <td>{{ v.job_no or '' }}</td>
-            <td>
-              {% if v.date_in %}
-                {{ v.date_in.strftime("%Y-%m-%d %H:%M") }}
-              {% endif %}
-            </td>
-            <td>{{ v.customer_name or '' }}</td>
-            <td>{{ v.plate_number or '' }}</td>
-            <td>{{ v.model or '' }}</td>
-            <td class="text-end">
-              <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}?mode=all">Άνοιγμα</a>
-              <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}/pdf" target="_blank">PDF</a>
-              <a class="btn btn-outline-primary btn-sm" href="/visits/{{ v.id }}/print" target="_blank">Print</a>
-            </td>
-          </tr>
-          {% endfor %}
-          {% if not visits %}
-          <tr>
-            <td colspan="7" class="text-muted">Δεν υπάρχουν επισκέψεις.</td>
-          </tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
+<div class="card">
+  <div class="card-header fw-semibold">Τελευταίες Επισκέψεις</div>
+  <div class="card-body p-0">
+    <table class="table table-striped mb-0">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Job</th>
+          <th>Πελάτης</th>
+          <th>Πινακίδα</th>
+          <th>Τηλέφωνο</th>
+          <th>Ημ/νία Άφιξης</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for v in visits %}
+        <tr>
+          <td class="mono">{{ v.id }}</td>
+          <td class="mono">{{ v.job_no or '' }}</td>
+          <td>{{ v.customer_name or '' }}</td>
+          <td class="mono">{{ v.plate_number or '' }}</td>
+          <td class="mono">{{ v.phone or '' }}</td>
+          <td class="mono">{{ (v.date_in.strftime('%d/%m/%Y %H:%M') if v.date_in else '') }}</td>
+          <td><a class="btn btn-sm btn-primary" href="/visits/{{ v.id }}">Άνοιγμα</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
-
-<script>
-  function askResetPass(){
-    const pass = prompt("Βάλε κωδικό για Reset Tests:");
-    if(pass === null) return false; // cancel
-    document.getElementById("reset_password").value = pass.trim();
-    if(!pass.trim()){
-      alert("Ο κωδικός είναι υποχρεωτικός.");
-      return false;
-    }
-    return confirm("Είσαι σίγουρος; Θα σβηστούν ΟΛΑ τα test δεδομένα.");
-  }
-</script>
-
 {% endblock %}
