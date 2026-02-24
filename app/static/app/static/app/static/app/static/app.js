@@ -1,5 +1,3 @@
-// ===== TEST VERSION =====
-
 function showTestBanner() {
   if (document.getElementById("update-banner")) return;
 
@@ -19,12 +17,7 @@ function showTestBanner() {
   `;
 
   document.body.appendChild(el);
-
-  document.getElementById("close-btn").onclick = () => {
-    el.remove();
-  };
+  document.getElementById("close-btn").onclick = () => el.remove();
 }
 
-window.addEventListener("load", () => {
-  showTestBanner();
-});
+window.addEventListener("load", showTestBanner);
