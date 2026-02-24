@@ -5,6 +5,7 @@ import datetime as dt
 from typing import Optional, Dict, Tuple, List
 
 from fastapi import FastAPI, Request, Depends, Form, UploadFile, File
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import (
     RedirectResponse,
     HTMLResponse,
@@ -30,7 +31,7 @@ COMPANY = {
     "name": "O&S STEPHANOU LTD",
     "lines": [
         "Michael Paridi 3, Palouriotissa",
-        "Tel: 22436990-22436992",
+        "Tel: 22436990-22436936992",
         "Fax: 22437001",
         "Email: osstephanou@gmail.com",
         "Αρ. Μητρωου Φ.Π.Α: 10079915R",
@@ -42,6 +43,10 @@ COMPANY = {
 # APP
 # =========================
 app = FastAPI()
+
+# Serve static files (PWA: app.js, sw.js, manifest)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
 templates = Jinja2Templates(directory="app/templates")
 
 # =========================
@@ -118,8 +123,13 @@ DEFAULT_ITEMS = [
 def _seed_checklist(db: Session):
     if db.query(ChecklistItem).count() > 0:
         return
-    for cat, name in DEFAULT_ITEMS:
-        db.add(ChecklistItem(category=cat, name=name))
+    # seed categories + items
+    cats = set([c for c, _ in DEFAULT_ITEMS])
+    for c in sorted(cats):
+        db.add(ChecklistCategory(name=c))
+    db.commit()
+    for c, name in DEFAULT_ITEMS:
+        db.add(ChecklistItem(category=c, name=name))
     db.commit()
 
 
@@ -172,7 +182,7 @@ def _selected_lines(lines: List[VisitChecklistLine]) -> List[VisitChecklistLine]
 def _visit_dict(v: Visit) -> dict:
     return {
         "id": v.id,
-                "plate_number": v.plate_number or "",
+        "plate_number": v.plate_number or "",
         "vin": v.vin or "",
         "model": v.model or "",
         "km": v.km or "",
@@ -182,6 +192,7 @@ def _visit_dict(v: Visit) -> dict:
         "customer_complaint": v.customer_complaint or "",
         "date_in": v.date_in,
         "date_out": v.date_out,
+        "notes_general": getattr(v, "notes_general", None),
     }
 
 
@@ -193,6 +204,7 @@ def _line_dict(ln: VisitChecklistLine) -> dict:
         "notes": ln.notes or "",
         "parts_code": ln.parts_code or "",
         "parts_qty": int(ln.parts_qty or 0),
+        "exclude_from_print": bool(ln.exclude_from_print or False),
     }
 
 
@@ -246,7 +258,8 @@ def index(request: Request, db: Session = Depends(get_db), q: str = ""):
                 Visit.phone.ilike(f"%{q}%"),
                 Visit.email.ilike(f"%{q}%"),
                 Visit.model.ilike(f"%{q}%"),
-                Visit.vin.ilike(f"%{q}%"),            )
+                Visit.vin.ilike(f"%{q}%"),
+            )
         )
     visits = visits_q.order_by(Visit.id.desc()).limit(200).all()
     return templates.TemplateResponse("index.html", {"request": request, "visits": visits, "q": q})
@@ -339,7 +352,8 @@ async def visit_save_all(
     visit.model = (form.get("model") or "").strip() or None
     visit.km = (form.get("km") or "").strip() or None
     visit.customer_complaint = (form.get("customer_complaint") or "").strip() or None
-    visit.notes_general = (form.get("notes_general") or "").strip() or None
+    if hasattr(visit, "notes_general"):
+        visit.notes_general = (form.get("notes_general") or "").strip() or None
 
     # arrival / delivery (from browser inputs)
     di = _parse_dt(form.get("date_in") or "", form.get("time_in") or "")
@@ -358,146 +372,36 @@ async def visit_save_all(
         if res not in ("OK", "CHECK", "REPAIR"):
             res = "OK"
         ln.result = res
-
-        ln.notes = (form.get(f"notes_{rid}") or "").strip()
-
-        ln.parts_code = (form.get(f"parts_code_{rid}") or "").strip()
+        ln.notes = (form.get(f"notes_{rid}") or "").strip() or None
+        ln.parts_code = (form.get(f"parts_code_{rid}") or "").strip() or None
         try:
             ln.parts_qty = int((form.get(f"parts_qty_{rid}") or "0").strip() or 0)
         except Exception:
             ln.parts_qty = 0
+        ln.exclude_from_print = bool(form.get(f"exclude_{rid}") == "on")
 
-        ln.exclude_from_print = (form.get(f"exclude_{rid}") == "on")
-
-        # upsert part memory if we have model + parts_code
+        # save memory for autofill (per model key)
         if mk and ln.parts_code:
-            existing = (
-                db.query(PartMemory)
-                .filter(
-                    PartMemory.model_key == mk,
-                    PartMemory.category == (ln.category or ""),
-                    PartMemory.item_name == (ln.item_name or ""),
-                )
-                .first()
-            )
-            if existing:
-                existing.parts_code = ln.parts_code
-                existing.updated_at = dt.datetime.utcnow()
+            pm = db.query(PartMemory).filter(
+                PartMemory.model_key == mk,
+                PartMemory.category == (ln.category or ""),
+                PartMemory.item_name == (ln.item_name or ""),
+            ).first()
+            if pm:
+                pm.parts_code = ln.parts_code
             else:
                 db.add(
                     PartMemory(
                         model_key=mk,
-                        category=(ln.category or ""),
-                        item_name=(ln.item_name or ""),
-                        parts_code=ln.parts_code,
+                        category=ln.category or "",
+                        item_name=ln.item_name or "",
+                        parts_code=ln.parts_code or "",
                     )
                 )
 
-
     db.commit()
-    # If called via fetch/AJAX, don't redirect (keeps page state manageable)
-    accept = (request.headers.get("accept") or "").lower()
-    xrw = (request.headers.get("x-requested-with") or "").lower()
-    if "application/json" in accept or xrw == "xmlhttprequest":
-        return JSONResponse({"ok": True})
-    return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
 
-
-
-@app.post("/visits/{visit_id}/add_item")
-async def visit_add_item(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    """Add (category + item) to global checklist and to the current visit, without overwriting visit fields."""
-    visit = db.query(Visit).filter(Visit.id == visit_id).first()
-    if not visit:
-        return RedirectResponse("/", status_code=302)
-
-    form = await request.form()
-    new_cat = (form.get("new_category") or "").strip()
-    new_item = (form.get("new_item") or "").strip()
-    if new_cat and new_item:
-        # ensure exists in master list
-        exists = (
-            db.query(ChecklistItem)
-            .filter(ChecklistItem.category == new_cat, ChecklistItem.name == new_item)
-            .first()
-        )
-        if not exists:
-            db.add(ChecklistItem(category=new_cat, name=new_item))
-            db.commit()
-
-        # ensure line not already in this visit
-        line_exists = (
-            db.query(VisitChecklistLine)
-            .filter(
-                VisitChecklistLine.visit_id == visit_id,
-                VisitChecklistLine.category == new_cat,
-                VisitChecklistLine.item_name == new_item,
-            )
-            .first()
-        )
-        if not line_exists:
-            db.add(
-                VisitChecklistLine(
-                    visit_id=visit.id,
-                    category=new_cat,
-                    item_name=new_item,
-                    result="OK",
-                    notes="",
-                    parts_code="",
-                    parts_qty=0,
-                    exclude_from_print=False,
-                )
-            )
-            db.commit()
-
-    # If called via fetch/AJAX, don't redirect
-    accept = (request.headers.get("accept") or "").lower()
-    xrw = (request.headers.get("x-requested-with") or "").lower()
-    if "application/json" in accept or xrw == "xmlhttprequest":
-        return JSONResponse({"ok": True})
-    return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
-
-
-@app.post("/visits/{visit_id}/delete_line/{line_id}")
-def visit_delete_line(visit_id: int, line_id: int, db: Session = Depends(get_db)):
-    ln = db.query(VisitChecklistLine).filter(VisitChecklistLine.id == line_id, VisitChecklistLine.visit_id == visit_id).first()
-    if ln:
-        db.delete(ln)
-        db.commit()
-    return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
-
-
-@app.post("/visits/{visit_id}/delete_category")
-async def visit_delete_category(visit_id: int, request: Request, db: Session = Depends(get_db)):
-    form = await request.form()
-    cat = (form.get("category") or "").strip()
-    if cat:
-        db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id, VisitChecklistLine.category == cat).delete(synchronize_session=False)
-        db.commit()
-    return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
-
-
-
-# =========================
-# PDF / PRINT / EMAIL
-# =========================
-@app.get("/visits/{visit_id}/pdf")
-def visit_pdf(visit_id: int, db: Session = Depends(get_db)):
-    visit = db.query(Visit).filter(Visit.id == visit_id).first()
-    if not visit:
-        return RedirectResponse("/", status_code=302)
-
-    lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).order_by(
-        VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc()
-    ).all()
-    selected = _selected_lines(lines)
-
-    pdf_bytes = build_jobcard_pdf(COMPANY, _visit_dict(visit), [_line_dict(x) for x in selected])
-
-    filename = f"jobcard_{visit_id}.pdf"
-    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers={
-        "Content-Disposition": f'inline; filename="{filename}"'
-    })
+    return RedirectResponse(f"/visits/{visit_id}", status_code=302)
 
 
 @app.get("/visits/{visit_id}/print", response_class=HTMLResponse)
@@ -505,37 +409,52 @@ def visit_print(visit_id: int, request: Request, db: Session = Depends(get_db)):
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
+
     lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).order_by(
         VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc()
     ).all()
-    selected = _selected_lines(lines)
-    return templates.TemplateResponse("print.html", {"request": request, "visit": visit, "lines": selected})
+
+    lines_to_show = _selected_lines(lines)
+
+    return templates.TemplateResponse(
+        "print.html",
+        {"request": request, "visit": visit, "lines": lines_to_show, "company": COMPANY},
+    )
+
+
+@app.get("/visits/{visit_id}/pdf")
+def visit_pdf(visit_id: int, db: Session = Depends(get_db)):
+    visit = db.query(Visit).filter(Visit.id == visit_id).first()
+    if not visit:
+        return JSONResponse({"error": "not found"}, status_code=404)
+
+    lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).order_by(
+        VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc()
+    ).all()
+
+    pdf_bytes = build_jobcard_pdf(visit=visit, lines=_selected_lines(lines), company=COMPANY)
+    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf")
 
 
 @app.post("/visits/{visit_id}/email")
-def visit_email(visit_id: int, db: Session = Depends(get_db)):
+def visit_email(
+    visit_id: int,
+    to_email: str = Form(...),
+    db: Session = Depends(get_db),
+):
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
-        return RedirectResponse("/", status_code=302)
-    to_email = (visit.email or "").strip()
-    if not to_email:
-        return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
 
     lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).order_by(
         VisitChecklistLine.category.asc(), VisitChecklistLine.id.asc()
     ).all()
-    selected = _selected_lines(lines)
-    pdf_bytes = build_jobcard_pdf(COMPANY, _visit_dict(visit), [_line_dict(x) for x in selected])
 
-    subject = f"Job Card {visit.id}"
-    body = "Σας επισυνάπτουμε το Job Card σε PDF.\n\nO&S STEPHANOU LTD"
-    try:
-        send_email_with_pdf(to_email, subject, body, pdf_bytes, filename=f"jobcard_{visit.id}.pdf")
-    except Exception as e:
-        # δείξε error απλά στο UI ως query param (για να μην σπάει)
-        return RedirectResponse(f"/visits/{visit_id}?mode=all&email_error=1", status_code=302)
-
-    return RedirectResponse(f"/visits/{visit_id}?mode=all&email_sent=1", status_code=302)
+    pdf_bytes = build_jobcard_pdf(visit=visit, lines=_selected_lines(lines), company=COMPANY)
+    ok, err = send_email_with_pdf(to_email=to_email, pdf_bytes=pdf_bytes, subject=f"Job Card #{visit.id}")
+    if not ok:
+        return JSONResponse({"ok": False, "error": err}, status_code=500)
+    return {"ok": True}
 
 
 # =========================
@@ -543,46 +462,35 @@ def visit_email(visit_id: int, db: Session = Depends(get_db)):
 # =========================
 @app.get("/checklist", response_class=HTMLResponse)
 def checklist_admin(request: Request, db: Session = Depends(get_db)):
+    categories = db.query(ChecklistCategory).order_by(ChecklistCategory.name.asc()).all()
     items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.id.asc()).all()
-    return templates.TemplateResponse("checklist.html", {"request": request, "items": items})
+    by_cat: Dict[str, List[ChecklistItem]] = {}
+    for it in items:
+        by_cat.setdefault(it.category, []).append(it)
+    return templates.TemplateResponse(
+        "checklist.html",
+        {"request": request, "categories": categories, "by_cat": by_cat},
+    )
 
-
-
-def _ensure_category(db: Session, name: str) -> None:
-    name = (name or "").strip()
-    if not name:
-        return
-    exists = db.query(ChecklistCategory).filter(ChecklistCategory.name == name).first()
-    if not exists:
-        db.add(ChecklistCategory(name=name))
-        db.commit()
-
-
-@app.post("/categories/add")
-async def categories_add(request: Request, db: Session = Depends(get_db)):
-    form = await request.form()
-    name = (form.get("name") or "").strip()
-    if not name:
-        return RedirectResponse(url="/", status_code=302)
-    _ensure_category(db, name)
-    # επιστρέφει πίσω από όπου ήρθε (π.χ. /visits/ID ή /checklist)
-    back = request.headers.get("referer") or "/"
-    return RedirectResponse(url=back, status_code=302)
 
 @app.post("/checklist/add")
-def checklist_add(
-    db: Session = Depends(get_db),
-    category: str = Form(...),
-    name: str = Form(...),
-):
-    category = category.strip()
-    name = name.strip()
-    if category and name:
-        exists = db.query(ChecklistItem).filter(ChecklistItem.category == category, ChecklistItem.name == name).first()
-        if not exists:
-            db.add(ChecklistItem(category=category, name=name))
-            db.commit()
+def checklist_add(category: str = Form(...), name: str = Form(...), db: Session = Depends(get_db)):
+    category = (category or "").strip()
+    name = (name or "").strip()
+    if not category or not name:
+        return RedirectResponse("/checklist", status_code=302)
+
+    # ensure category exists
+    cat = db.query(ChecklistCategory).filter(ChecklistCategory.name == category).first()
+    if not cat:
+        db.add(ChecklistCategory(name=category))
+        db.commit()
+
+    # create item
+    db.add(ChecklistItem(category=category, name=name))
+    db.commit()
     return RedirectResponse("/checklist", status_code=302)
+
 
 @app.post("/checklist/delete/{item_id}")
 def checklist_delete(item_id: int, db: Session = Depends(get_db)):
@@ -593,28 +501,15 @@ def checklist_delete(item_id: int, db: Session = Depends(get_db)):
     return RedirectResponse("/checklist", status_code=302)
 
 
-@app.post("/checklist/edit/{item_id}")
-async def checklist_edit(item_id: int, request: Request, db: Session = Depends(get_db)):
-    form = await request.form()
-    category = (form.get("category") or "").strip()
-    name = (form.get("name") or "").strip()
-    it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
-    if it and category and name:
-        it.category = category
-        it.name = name
-        db.commit()
-    return RedirectResponse("/checklist", status_code=302)
-
-
 # =========================
 # SEARCH
 # =========================
 @app.get("/search", response_class=HTMLResponse)
-def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
+def search_page(request: Request, db: Session = Depends(get_db), q: str = ""):
     q = (q or "").strip()
-    results = []
+    visits = []
     if q:
-        results = (
+        visits = (
             db.query(Visit)
             .filter(
                 or_(
@@ -623,13 +518,14 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
                     Visit.phone.ilike(f"%{q}%"),
                     Visit.email.ilike(f"%{q}%"),
                     Visit.model.ilike(f"%{q}%"),
-                    Visit.vin.ilike(f"%{q}%"),                )
+                    Visit.vin.ilike(f"%{q}%"),
+                )
             )
             .order_by(Visit.id.desc())
             .limit(200)
             .all()
         )
-    return templates.TemplateResponse("search.html", {"request": request, "q": q, "results": results})
+    return templates.TemplateResponse("search.html", {"request": request, "visits": visits, "q": q})
 
 
 # =========================
@@ -644,196 +540,67 @@ def history_page(
     q: str = "",
 ):
     q = (q or "").strip()
-    qy = db.query(Visit)
+    visits_q = db.query(Visit)
 
-    # date range uses Visit.date_in
-    def _d(s: str) -> Optional[dt.datetime]:
-        s = (s or "").strip()
-        if not s:
-            return None
+    if from_date:
         try:
-            y, m, d = [int(x) for x in s.split("-")]
-            return dt.datetime(y, m, d, 0, 0)
+            d = dt.datetime.fromisoformat(from_date)
+            visits_q = visits_q.filter(Visit.date_in >= d)
         except Exception:
-            return None
-
-    d1 = _d(from_date)
-    d2 = _d(to_date)
-    if d1:
-        qy = qy.filter(Visit.date_in >= d1)
-    if d2:
-        qy = qy.filter(Visit.date_in < (d2 + dt.timedelta(days=1)))
+            pass
+    if to_date:
+        try:
+            d = dt.datetime.fromisoformat(to_date) + dt.timedelta(days=1)
+            visits_q = visits_q.filter(Visit.date_in < d)
+        except Exception:
+            pass
 
     if q:
-        qy = qy.filter(
+        visits_q = visits_q.filter(
             or_(
                 Visit.customer_name.ilike(f"%{q}%"),
                 Visit.plate_number.ilike(f"%{q}%"),
                 Visit.phone.ilike(f"%{q}%"),
                 Visit.email.ilike(f"%{q}%"),
                 Visit.model.ilike(f"%{q}%"),
-                Visit.vin.ilike(f"%{q}%"),            )
+                Visit.vin.ilike(f"%{q}%"),
+            )
         )
 
-    visits = qy.order_by(Visit.id.desc()).limit(500).all()
-
-    visit_ids = [v.id for v in visits]
-    summaries: Dict[int, str] = {}
-    if visit_ids:
-        # Load related checklist lines in one query
-        lines = (
-            db.query(VisitChecklistLine)
-            .filter(VisitChecklistLine.visit_id.in_(visit_ids))
-            .order_by(VisitChecklistLine.visit_id.asc(), VisitChecklistLine.id.asc())
-            .all()
-        )
-        by_visit: Dict[int, List[VisitChecklistLine]] = {}
-        for ln in lines:
-            by_visit.setdefault(ln.visit_id, []).append(ln)
-
-        for v in visits:
-            parts: List[str] = []
-            if v.customer_complaint:
-                parts.append(f"Παράπονο: {v.customer_complaint}")
-            if v.notes_general:
-                parts.append(f"Σημ.: {v.notes_general}")
-
-            # include only non-OK lines or lines with notes/parts
-            extra = []
-            for ln in by_visit.get(v.id, []):
-                if (ln.result and ln.result != "OK") or (ln.notes and ln.notes.strip()) or (ln.parts_code and ln.parts_code.strip()):
-                    label = f"{ln.category}: {ln.item_name}"
-                    if ln.result and ln.result != "OK":
-                        label += f" [{ln.result}]"
-                    if ln.notes and ln.notes.strip():
-                        label += f" — {ln.notes.strip()}"
-                    if ln.parts_code and ln.parts_code.strip():
-                        qty = ln.parts_qty or 0
-                        label += f" (Parts: {ln.parts_code}{' x'+str(qty) if qty else ''})"
-                    extra.append(label)
-
-            if extra:
-                parts.append(" / ".join(extra[:4]) + (f" (+{len(extra)-4})" if len(extra) > 4 else ""))
-
-            summaries[v.id] = " | ".join([p.strip() for p in parts if p.strip()])
-
+    visits = visits_q.order_by(Visit.id.desc()).limit(500).all()
 
     return templates.TemplateResponse(
         "history.html",
-        {"request": request, "visits": visits, "summaries": summaries, "from_date": from_date, "to_date": to_date, "q": q},
+        {"request": request, "visits": visits, "from_date": from_date, "to_date": to_date, "q": q},
     )
 
 
 # =========================
-# BACKUP / IMPORT
+# BACKUP EXPORT / IMPORT
 # =========================
 @app.get("/backup")
 def backup_export(db: Session = Depends(get_db)):
-    payload = {
-        "version": 1,
-        "exported_at": dt.datetime.utcnow().isoformat(),
-        "checklist_items": [
-            {"id": x.id, "category": x.category, "name": x.name}
-            for x in db.query(ChecklistItem).order_by(ChecklistItem.id.asc()).all()
-        ],
-        "part_memories": [
-            {
-                "id": x.id,
-                "model_key": x.model_key,
-                "category": x.category,
-                "item_name": x.item_name,
-                "parts_code": x.parts_code,
-                "updated_at": x.updated_at.isoformat() if x.updated_at else None,
-            }
-            for x in db.query(PartMemory).order_by(PartMemory.id.asc()).all()
-        ],
-        "visits": [
-            {
-                "id": v.id,                "date_in": v.date_in.isoformat() if v.date_in else None,
-                "date_out": v.date_out.isoformat() if v.date_out else None,
-                "plate_number": v.plate_number,
-                "vin": v.vin,
-                "model": v.model,
-                "km": v.km,
-                "customer_name": v.customer_name,
-                "phone": v.phone,
-                "email": v.email,
-                "customer_complaint": v.customer_complaint,
-                "notes_general": getattr(v, "notes_general", None),
-            }
-            for v in db.query(Visit).order_by(Visit.id.asc()).all()
-        ],
-        "visit_lines": [
-            {
-                "id": ln.id,
-                "visit_id": ln.visit_id,
-                "category": ln.category,
-                "item_name": ln.item_name,
-                "result": ln.result,
-                "notes": ln.notes,
-                "parts_code": ln.parts_code,
-                "parts_qty": ln.parts_qty,
-                "exclude_from_print": ln.exclude_from_print,
-            }
-            for ln in db.query(VisitChecklistLine).order_by(VisitChecklistLine.id.asc()).all()
-        ],
+    data = {
+        "visits": [_visit_dict(v) for v in db.query(Visit).order_by(Visit.id.asc()).all()],
+        "visit_lines": [_line_dict(ln) for ln in db.query(VisitChecklistLine).order_by(VisitChecklistLine.id.asc()).all()],
+        "checklist_categories": [{"id": c.id, "name": c.name} for c in db.query(ChecklistCategory).order_by(ChecklistCategory.id.asc()).all()],
+        "checklist_items": [{"id": i.id, "category": i.category, "name": i.name} for i in db.query(ChecklistItem).order_by(ChecklistItem.id.asc()).all()],
+        "part_memories": [{"id": p.id, "model_key": p.model_key, "category": p.category, "item_name": p.item_name, "parts_code": p.parts_code} for p in db.query(PartMemory).order_by(PartMemory.id.asc()).all()],
     }
-
-    b = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-    fname = f"stefanou_backup_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.json"
-    return StreamingResponse(io.BytesIO(b), media_type="application/json", headers={
-        "Content-Disposition": f'attachment; filename="{fname}"'
-    })
+    return JSONResponse(data)
 
 
 @app.post("/backup/import")
-async def backup_import(request: Request, db: Session = Depends(get_db), file: UploadFile = File(...)):
-    raw = await file.read()
+async def backup_import(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    content = await file.read()
+    data = json.loads(content.decode("utf-8"))
+
+    # very simple import: append / map ids
     try:
-        data = json.loads(raw.decode("utf-8"))
-    except Exception:
-        return RedirectResponse("/", status_code=302)
-
-    # replace everything (safe for restore)
-    try:
-        driver = (engine.url.drivername or "").lower()
-        tables = [
-            VisitChecklistLine.__table__.name,
-            Visit.__table__.name,
-            PartMemory.__table__.name,
-            ChecklistItem.__table__.name,
-        ]
-        if driver.startswith("postgresql"):
-            for t in tables:
-                db.execute(text(f'TRUNCATE TABLE "{t}" RESTART IDENTITY CASCADE;'))
-        else:
-            db.query(VisitChecklistLine).delete(synchronize_session=False)
-            db.query(Visit).delete(synchronize_session=False)
-            db.query(PartMemory).delete(synchronize_session=False)
-            db.query(ChecklistItem).delete(synchronize_session=False)
-        db.commit()
-
-        for it in data.get("checklist_items", []):
-            db.add(ChecklistItem(category=it.get("category") or "", name=it.get("name") or ""))
-
-        db.commit()
-
-        for pm in data.get("part_memories", []):
-            db.add(
-                PartMemory(
-                    model_key=pm.get("model_key") or "",
-                    category=pm.get("category") or "",
-                    item_name=pm.get("item_name") or "",
-                    parts_code=pm.get("parts_code") or "",
-                    updated_at=dt.datetime.fromisoformat(pm["updated_at"]) if pm.get("updated_at") else dt.datetime.utcnow(),
-                )
-            )
-        db.commit()
-
         id_map = {}
+
         for v in data.get("visits", []):
-            vv = Visit(                date_in=dt.datetime.fromisoformat(v["date_in"]) if v.get("date_in") else None,
-                date_out=dt.datetime.fromisoformat(v["date_out"]) if v.get("date_out") else None,
+            vv = Visit(
                 plate_number=v.get("plate_number"),
                 vin=v.get("vin"),
                 model=v.get("model"),
