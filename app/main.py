@@ -255,13 +255,12 @@ def index(request: Request, db: Session = Depends(get_db), q: str = ""):
 @app.post("/visits/new")
 def visit_new(db: Session = Depends(get_db)):
     # Αφήνουμε date_in κενό ώστε να μπει από τη συσκευή (client) στην πρώτη αποθήκευση.
-    # Έτσι η ώρα/ημερομηνία θα είναι η ίδια με του υπολογιστή/κινητού.
     v = Visit(date_in=None)
     db.add(v)
     db.commit()
     db.refresh(v)
 
-    # create lines for all checklist items (stable editing + printing)
+    # create lines for all checklist items
     items = db.query(ChecklistItem).order_by(ChecklistItem.id.asc()).all()
     for it in items:
         db.add(
@@ -278,7 +277,7 @@ def visit_new(db: Session = Depends(get_db)):
         )
     db.commit()
 
-    return RedirectResponse(f"/visits/{v.id}", status_code=302)
+    return RedirectResponse(f"/visits/{v.id}?mode=all", status_code=302)
 
 
 @app.post("/visits/{visit_id}/add_line")
@@ -286,19 +285,25 @@ def visit_add_line(
     visit_id: int,
     new_category: str = Form(""),
     new_item: str = Form(""),
+    mode: str = Form("all"),
     db: Session = Depends(get_db),
 ):
-    """Προσθήκη νέας κατηγορίας/εργασίας χωρίς να χαθούν τα ήδη συμπληρωμένα.
-    Το template κάνει autosave σε localStorage, οπότε μετά το reload επανέρχονται."""
+    """Προσθήκη νέας κατηγορίας/εργασίας χωρίς να χαθούν τα ήδη συμπληρωμένα."""
     new_category = (new_category or "").strip()
     new_item = (new_item or "").strip()
+
+    mode = (mode or "all").strip()
+    if mode not in ("all", "selected"):
+        mode = "all"
+
     if not new_category or not new_item:
-       return RedirectResponse(f"/visits/{visit_id}", status_code=302)
- visit = db.query(Visit).filter(Visit.id == visit_id).first()
+        return RedirectResponse(f"/visits/{visit_id}?mode={mode}", status_code=302)
+
+    visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    # Αν δεν υπάρχει στο master checklist, πρόσθεσέ το
+    # add to master checklist if missing
     exists = (
         db.query(ChecklistItem)
         .filter(ChecklistItem.category == new_category, ChecklistItem.name == new_item)
@@ -308,7 +313,7 @@ def visit_add_line(
         db.add(ChecklistItem(category=new_category, name=new_item))
         db.commit()
 
-    # Αν δεν υπάρχει ήδη γραμμή για αυτή την επίσκεψη, πρόσθεσέ την
+    # add visit line if missing
     line_exists = (
         db.query(VisitChecklistLine)
         .filter(
@@ -333,7 +338,7 @@ def visit_add_line(
         )
         db.commit()
 
-    return RedirectResponse(f"/visits/{visit_id}", status_code=302)
+    return RedirectResponse(f"/visits/{visit_id}?mode={mode}", status_code=302)
 
 
 @app.get("/visits/{visit_id}", response_class=HTMLResponse)
@@ -384,8 +389,11 @@ async def visit_save_all(
 
     form = await request.form()
 
-    # update visit fields
-    # job_no δεν χρησιμοποιείται πλέον (κρατάμε μόνο το id)
+    # ✅ κρατάμε το mode μετά το save
+    mode = (form.get("mode") or "all").strip()
+    if mode not in ("all", "selected"):
+        mode = "all"
+
     visit.plate_number = (form.get("plate_number") or "").strip() or None
     visit.vin = (form.get("vin") or "").strip() or None
     visit.customer_name = (form.get("customer_name") or "").strip() or None
@@ -396,7 +404,6 @@ async def visit_save_all(
     visit.customer_complaint = (form.get("customer_complaint") or "").strip() or None
     visit.notes_general = (form.get("notes_general") or "").strip() or None
 
-    # arrival / delivery (from browser inputs)
     di = _parse_dt(form.get("date_in") or "", form.get("time_in") or "")
     do = _parse_dt(form.get("date_out") or "", form.get("time_out") or "")
     if di:
@@ -404,18 +411,18 @@ async def visit_save_all(
     if do:
         visit.date_out = do
 
-    # update each line
     lines = db.query(VisitChecklistLine).filter(VisitChecklistLine.visit_id == visit_id).all()
     mk = _model_key(visit)
+
     for ln in lines:
         rid = str(ln.id)
+
         res = (form.get(f"result_{rid}") or "OK").strip().upper()
         if res not in ("OK", "CHECK", "REPAIR"):
             res = "OK"
         ln.result = res
 
         ln.notes = (form.get(f"notes_{rid}") or "").strip()
-
         ln.parts_code = (form.get(f"parts_code_{rid}") or "").strip()
         try:
             ln.parts_qty = int((form.get(f"parts_qty_{rid}") or "0").strip() or 0)
@@ -424,7 +431,6 @@ async def visit_save_all(
 
         ln.exclude_from_print = (form.get(f"exclude_{rid}") == "on")
 
-        # upsert part memory if we have model + parts_code
         if mk and ln.parts_code:
             existing = (
                 db.query(PartMemory)
@@ -449,7 +455,7 @@ async def visit_save_all(
                 )
 
     db.commit()
-    return RedirectResponse(f"/visits/{visit_id}?mode=all&saved=1", status_code=302)
+    return RedirectResponse(f"/visits/{visit_id}?mode={mode}&saved=1", status_code=302)
 
 
 # =========================
@@ -505,8 +511,7 @@ def visit_email(visit_id: int, db: Session = Depends(get_db)):
     body = "Σας επισυνάπτουμε το Job Card σε PDF.\n\nO&S STEPHANOU LTD"
     try:
         send_email_with_pdf(to_email, subject, body, pdf_bytes, filename=f"jobcard_{visit.id}.pdf")
-    except Exception as e:
-        # δείξε error απλά στο UI ως query param (για να μην σπάει)
+    except Exception:
         return RedirectResponse(f"/visits/{visit_id}?mode=all&email_error=1", status_code=302)
 
     return RedirectResponse(f"/visits/{visit_id}?mode=all&email_sent=1", status_code=302)
@@ -603,7 +608,6 @@ def history_page(
     q = (q or "").strip()
     qy = db.query(Visit)
 
-    # date range uses Visit.date_in
     def _d(s: str) -> Optional[dt.datetime]:
         s = (s or "").strip()
         if not s:
@@ -713,7 +717,6 @@ async def backup_import(request: Request, db: Session = Depends(get_db), file: U
     except Exception:
         return RedirectResponse("/", status_code=302)
 
-    # replace everything (safe for restore)
     try:
         driver = (engine.url.drivername or "").lower()
         tables = [
@@ -734,7 +737,6 @@ async def backup_import(request: Request, db: Session = Depends(get_db), file: U
 
         for it in data.get("checklist_items", []):
             db.add(ChecklistItem(category=it.get("category") or "", name=it.get("name") or ""))
-
         db.commit()
 
         for pm in data.get("part_memories", []):
