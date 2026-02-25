@@ -1,270 +1,206 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% block content %}
 
-<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-  <div class="fs-4 fw-semibold">Επίσκεψη #{{ visit.id }}</div>
-  <div class="small-muted">Mode: {{ mode }}</div>
-  <div class="ms-auto d-flex gap-2 no-print">
-    <a class="btn btn-outline-secondary" href="/visits/{{ visit.id }}?mode=all">Όλα</a>
-    <a class="btn btn-outline-secondary" href="/visits/{{ visit.id }}?mode=selected">Μόνο επιλεγμένα</a>
-    <a class="btn btn-outline-primary" href="/visits/{{ visit.id }}/print" target="_blank">Print View</a>
-    <a class="btn btn-outline-primary" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="d-flex gap-2 align-items-center">
+    <a class="btn btn-outline-secondary btn-sm" href="/">← Πίσω</a>
+    <div class="fw-semibold">Επίσκεψη #{{ visit.id }}</div>
+    <span class="badge text-bg-light">{{ "Επιλεγμένες" if mode=="selected" else "Όλες" }}</span>
+  </div>
+
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-primary btn-sm" href="/visits/{{ visit.id }}?mode=all">Όλες</a>
+    <a class="btn btn-outline-primary btn-sm" href="/visits/{{ visit.id }}?mode=selected">Επιλεγμένες</a>
+    <a class="btn btn-outline-primary btn-sm" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
+    <a class="btn btn-outline-primary btn-sm" href="/visits/{{ visit.id }}/print" target="_blank">Print</a>
   </div>
 </div>
 
-{% if request.query_params.get('email_sent') %}
-  <div class="alert alert-success">Το email στάλθηκε.</div>
-{% endif %}
-{% if request.query_params.get('email_error') %}
-  <div class="alert alert-danger">Σφάλμα αποστολής email (έλεγξε SMTP env vars).</div>
-{% endif %}
+<form method="post" action="/visits/{{ visit.id }}/save_all" id="visit-form">
+  <!-- ✅ κρατάμε το mode ώστε μετά το save να μείνει ίδιο -->
+  <input type="hidden" name="mode" value="{{ mode }}">
 
-<form id="visit-form" method="post" action="/visits/{{ visit.id }}/save_all" class="no-print">
-
-  <!-- Customer / Vehicle box on TOP (as requested) -->
+  <!-- Customer / vehicle card (πάνω) -->
   <div class="card shadow-sm mb-3">
-    <div class="card-header fw-semibold">Στοιχεία Πελάτη & Οχήματος</div>
     <div class="card-body">
       <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label">Όνομα Πελάτη</label>
+          <input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Τηλέφωνο</label>
+          <input class="form-control" name="phone" value="{{ visit.phone or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Email</label>
+          <input class="form-control" name="email" value="{{ visit.email or '' }}">
+        </div>
         <div class="col-md-3">
           <label class="form-label">Πινακίδα</label>
           <input class="form-control" name="plate_number" value="{{ visit.plate_number or '' }}">
         </div>
-        <div class="col-md-3">
-          <label class="form-label">VIN</label>
-          <input class="form-control" name="vin" value="{{ visit.vin or '' }}">
-        </div>
+
         <div class="col-md-3">
           <label class="form-label">Μοντέλο</label>
           <input class="form-control" name="model" value="{{ visit.model or '' }}">
         </div>
         <div class="col-md-3">
+          <label class="form-label">VIN</label>
+          <input class="form-control" name="vin" value="{{ visit.vin or '' }}">
+        </div>
+        <div class="col-md-2">
           <label class="form-label">KM</label>
           <input class="form-control" name="km" value="{{ visit.km or '' }}">
         </div>
 
-        <div class="col-md-4">
-          <label class="form-label">Όνομα Πελάτη</label>
-          <input class="form-control" name="customer_name" value="{{ visit.customer_name or '' }}">
+        <div class="col-md-2">
+          <label class="form-label">Άφιξη (Ημ/νία)</label>
+          <input class="form-control" type="date" name="date_in" value="{{ visit.date_in.strftime('%Y-%m-%d') if visit.date_in else '' }}">
         </div>
-        <div class="col-md-4">
-          <label class="form-label">Τηλέφωνο</label>
-          <input class="form-control" name="phone" value="{{ visit.phone or '' }}">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Email</label>
-          <input class="form-control" name="email" value="{{ visit.email or '' }}">
+        <div class="col-md-2">
+          <label class="form-label">Άφιξη (Ώρα)</label>
+          <input class="form-control" type="time" name="time_in" value="{{ visit.date_in.strftime('%H:%M') if visit.date_in else '' }}">
         </div>
 
-        <div class="col-md-6">
-          <label class="form-label">Ημ/νία & Ώρα Άφιξης</label>
-          <div class="d-flex gap-2">
-            <input class="form-control" id="date_in" type="date" name="date_in" value="{{ (visit.date_in.strftime('%Y-%m-%d') if visit.date_in else '') }}">
-            <input class="form-control" id="time_in" type="time" name="time_in" value="{{ (visit.date_in.strftime('%H:%M') if visit.date_in else '') }}">
-          </div>
+        <div class="col-md-2">
+          <label class="form-label">Παράδοση (Ημ/νία)</label>
+          <input class="form-control" type="date" name="date_out" value="{{ visit.date_out.strftime('%Y-%m-%d') if visit.date_out else '' }}">
         </div>
-        <div class="col-md-6">
-          <label class="form-label">Ημ/νία & Ώρα Παράδοσης</label>
-          <div class="d-flex gap-2">
-            <input class="form-control" id="date_out" type="date" name="date_out" value="{{ (visit.date_out.strftime('%Y-%m-%d') if visit.date_out else '') }}">
-            <input class="form-control" id="time_out" type="time" name="time_out" value="{{ (visit.date_out.strftime('%H:%M') if visit.date_out else '') }}">
-          </div>
+        <div class="col-md-2">
+          <label class="form-label">Παράδοση (Ώρα)</label>
+          <input class="form-control" type="time" name="time_out" value="{{ visit.date_out.strftime('%H:%M') if visit.date_out else '' }}">
         </div>
 
         <div class="col-12">
-          <label class="form-label">Απαίτηση / Σχόλια πελάτη</label>
+          <label class="form-label">Παράπονο / Τι θέλει ο πελάτης</label>
           <textarea class="form-control" name="customer_complaint" rows="2">{{ visit.customer_complaint or '' }}</textarea>
         </div>
-        <div class="col-12">
-          <label class="form-label">Γενικές σημειώσεις</label>
-          <textarea class="form-control" name="notes_general" rows="2">{{ visit.notes_general or '' }}</textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="open-all">Άνοιγμα όλων</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="close-all">Κλείσιμο όλων</button>
+    <span class="small text-muted ms-1">Tip: Μπορείς να έχεις πολλές κατηγορίες ανοιχτές μαζί.</span>
+  </div>
+
+  <!-- ✅ Multi-open collapsibles (NO data-bs-parent) -->
+  <div class="accordion" id="cats-accordion">
+    {% set current_cat = None %}
+    {% set cat_index = 0 %}
+
+    {% for ln in lines %}
+      {% if current_cat != ln.category %}
+        {% if current_cat is not none %}
+              </div>
+            </div>
+          </div>
+        {% endif %}
+
+        {% set current_cat = ln.category %}
+        {% set cat_index = cat_index + 1 %}
+        {% set cid = "cat_" ~ cat_index %}
+
+        <div class="accordion-item mb-2">
+          <h2 class="accordion-header" id="{{ cid }}_head">
+            <button class="accordion-button collapsed" type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#{{ cid }}_body"
+                    aria-expanded="false"
+                    aria-controls="{{ cid }}_body">
+              {{ current_cat }}
+            </button>
+          </h2>
+
+          <div id="{{ cid }}_body" class="accordion-collapse collapse" aria-labelledby="{{ cid }}_head">
+            <div class="accordion-body p-2">
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr class="small text-muted">
+                      <th style="width:34%">Εργασία</th>
+                      <th style="width:16%">Κατάσταση</th>
+                      <th style="width:26%">Σημειώσεις</th>
+                      <th style="width:14%">Part Code</th>
+                      <th style="width:10%">Qty</th>
+                      <th style="width:8%" class="text-center">Print</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+      {% endif %}
+
+        <tr>
+          <td class="fw-semibold">{{ ln.item_name }}</td>
+
+          <td>
+            <select class="form-select form-select-sm" name="result_{{ ln.id }}">
+              <option value="OK" {% if (ln.result or 'OK') == 'OK' %}selected{% endif %}>OK</option>
+              <option value="CHECK" {% if (ln.result or '') == 'CHECK' %}selected{% endif %}>CHECK</option>
+              <option value="REPAIR" {% if (ln.result or '') == 'REPAIR' %}selected{% endif %}>REPAIR</option>
+            </select>
+          </td>
+
+          <td>
+            <input class="form-control form-control-sm" name="notes_{{ ln.id }}" value="{{ ln.notes or '' }}">
+          </td>
+
+          <td>
+            <input class="form-control form-control-sm mono" name="parts_code_{{ ln.id }}" value="{{ ln.parts_code or '' }}">
+          </td>
+
+          <td>
+            <input class="form-control form-control-sm" type="number" min="0" name="parts_qty_{{ ln.id }}" value="{{ ln.parts_qty or 0 }}">
+          </td>
+
+          <td class="text-center">
+            <input class="form-check-input" type="checkbox" name="exclude_{{ ln.id }}" {% if ln.exclude_from_print %}checked{% endif %}>
+          </td>
+        </tr>
+
+    {% endfor %}
+
+    {% if current_cat is not none %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+    {% endif %}
   </div>
 
-  <!-- Checklist (grouped by category) -->
-  <div class="card shadow-sm">
-    <div class="card-header d-flex align-items-center">
-      <div class="fw-semibold">Checklist</div>
-      <div class="ms-auto small-muted">Tip: Parts No “θυμάται” ανά Μοντέλο.</div>
-    </div>
-
-    <div class="card-body p-0">
-      <div class="accordion" id="acc-checklist">
-        {% set ns = namespace(cur=None, idx=0) %}
-        {% for ln in lines %}
-          {% if ns.cur != ln.category %}
-            {% if not loop.first %}
-                  </tbody></table>
-                </div>
-              </div>
-            </div>
-            {% endif %}
-
-            {% set ns.cur = ln.category %}
-            {% set ns.idx = ns.idx + 1 %}
-
-            <div class="accordion-item">
-              <h2 class="accordion-header" id="h{{ ns.idx }}">
-                <button class="accordion-button {% if ns.idx != 1 %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#c{{ ns.idx }}" aria-expanded="{% if ns.idx == 1 %}true{% else %}false{% endif %}" aria-controls="c{{ ns.idx }}">
-                  {{ ns.cur or '' }}
-                </button>
-              </h2>
-              <div id="c{{ ns.idx }}" class="accordion-collapse collapse {% if ns.idx == 1 %}show{% endif %}" aria-labelledby="h{{ ns.idx }}" data-bs-parent="#acc-checklist">
-                <div class="accordion-body p-0">
-                  <table class="table table-hover mb-0">
-                    <thead>
-                      <tr>
-                        <th style="width: 26%">Εργασία</th>
-                        <th style="width: 10%">Status</th>
-                        <th style="width: 16%">Parts No</th>
-                        <th style="width: 8%">Qty</th>
-                        <th>Notes</th>
-                        <th style="width: 6%" class="text-center">NoPrint</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-          {% endif %}
-
-          {% set rid = ln.id|string %}
-          <tr>
-            <td class="fw-semibold">{{ ln.item_name or '' }}</td>
-            <td>
-              <select class="form-select form-select-sm" name="result_{{ rid }}">
-                {% for opt in ['OK','CHECK','REPAIR'] %}
-                  <option value="{{ opt }}" {% if (ln.result or 'OK')|upper == opt %}selected{% endif %}>{{ opt }}</option>
-                {% endfor %}
-              </select>
-            </td>
-            <td>
-              {% set memkey = (ln.category or '', ln.item_name or '') %}
-              <input class="form-control form-control-sm mono" name="parts_code_{{ rid }}" value="{{ ln.parts_code or mem.get(memkey,'') }}" placeholder="Code">
-            </td>
-            <td>
-              <input class="form-control form-control-sm mono" name="parts_qty_{{ rid }}" value="{{ ln.parts_qty or 0 }}" style="max-width:90px">
-            </td>
-            <td>
-              <input class="form-control form-control-sm" name="notes_{{ rid }}" value="{{ ln.notes or '' }}" placeholder="Σημείωση">
-            </td>
-            <td class="text-center">
-              <input class="form-check-input" type="checkbox" name="exclude_{{ rid }}" {% if ln.exclude_from_print %}checked{% endif %}>
-            </td>
-          </tr>
-
-          {% if loop.last %}
-                    </tbody></table>
-                </div>
-              </div>
-            </div>
-          {% endif %}
-        {% endfor %}
-      </div>
-    </div>
+  <!-- ✅ Save at end -->
+  <div class="d-flex justify-content-end gap-2 mt-3">
+    <button class="btn btn-primary" type="submit">Αποθήκευση</button>
   </div>
-
-  <!-- Save button at END of page (as requested) -->
-  <div class="d-flex flex-wrap gap-2 mt-3">
-    <button class="btn btn-primary">Αποθήκευση</button>
-    <a class="btn btn-outline-secondary" href="/">Πίσω</a>
-  </div>
-
 </form>
 
-<!-- Add new checklist line (separate form, so it's clear and doesn't interfere) -->
-<div class="card mt-3 no-print">
-  <div class="card-header fw-semibold">Προσθήκη νέας κατηγορίας / εργασίας</div>
-  <div class="card-body">
-    <form method="post" action="/visits/{{ visit.id }}/add_line" class="row g-2" onsubmit="return confirm('Να προστεθεί η νέα κατηγορία/εργασία;');">
-      <div class="col-md-5">
-        <input class="form-control" name="new_category" placeholder="Κατηγορία" required>
-      </div>
-      <div class="col-md-5">
-        <input class="form-control" name="new_item" placeholder="Εργασία" required>
-      </div>
-      <div class="col-md-2">
-        <button class="btn btn-outline-primary w-100">Προσθήκη</button>
-      </div>
-    </form>
-    <div class="small-muted mt-2">Δεν χάνεις τα στοιχεία/επιλογές: γίνεται autosave στο browser και επανέρχονται μετά το reload.</div>
-  </div>
-</div>
-
-<div class="card mt-3 no-print">
-  <div class="card-header fw-semibold">Αποστολή PDF με Email</div>
-  <div class="card-body">
-    <div class="d-flex flex-wrap gap-2 align-items-center">
-      <div>Προς: <span class="mono">{{ visit.email or '-' }}</span></div>
-      <form method="post" action="/visits/{{ visit.id }}/email" class="ms-auto">
-        <button class="btn btn-outline-success" {% if not visit.email %}disabled{% endif %}>Send Email</button>
-      </form>
-    </div>
-    <div class="small-muted mt-2">Απαιτούνται env vars: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM</div>
-  </div>
-</div>
-
-<div class="alert alert-info mt-3">
-  <div class="fw-semibold">Τι εμφανίζει το PDF;</div>
-  <div>Μόνο γραμμές που είναι <span class="mono">CHECK</span> ή <span class="mono">REPAIR</span> ή έχουν <span class="mono">Qty &gt; 0</span> ή έχουν Parts No ή Notes, και που ΔΕΝ έχουν τικαρισμένο το NoPrint.</div>
-</div>
-
-<!-- JS: 1) date/time από device αν κενό, 2) autosave για να μην χάνονται οι επιλογές -->
 <script>
-(function () {
-  const visitId = "{{ visit.id }}";
-  const key = `visit-draft-${visitId}`;
-  const form = document.getElementById('visit-form');
-  if (!form) return;
-
-  // Fill arrival date/time from device if empty
-  function pad(n){ return String(n).padStart(2,'0'); }
-  const di = document.getElementById('date_in');
-  const ti = document.getElementById('time_in');
-  if (di && ti && !di.value && !ti.value) {
-    const now = new Date();
-    di.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-    ti.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  // Open/close all category collapses
+  function getAllCollapses() {
+    return Array.from(document.querySelectorAll('.accordion-collapse'));
   }
 
-  // Restore draft
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const data = JSON.parse(raw);
-      for (const [name, value] of Object.entries(data)) {
-        const el = form.elements.namedItem(name);
-        if (!el) continue;
-        if (el.type === 'checkbox') {
-          el.checked = !!value;
-        } else {
-          // Μην πατάμε πάνω σε value που ήδη υπάρχει από DB
-          if (!el.value) el.value = value;
-        }
-      }
-    }
-  } catch (e) {}
+  document.getElementById('open-all').addEventListener('click', () => {
+    getAllCollapses().forEach(el => bootstrap.Collapse.getOrCreateInstance(el, {toggle:false}).show());
+  });
 
-  // Autosave on input
-  function snapshot() {
-    const data = {};
-    for (const el of form.elements) {
-      if (!el.name) continue;
-      if (el.type === 'password' || el.type === 'file') continue;
-      if (el.type === 'checkbox') data[el.name] = el.checked;
-      else data[el.name] = el.value;
-    }
-    try { localStorage.setItem(key, JSON.stringify(data)); } catch (e) {}
-  }
+  document.getElementById('close-all').addEventListener('click', () => {
+    getAllCollapses().forEach(el => bootstrap.Collapse.getOrCreateInstance(el, {toggle:false}).hide());
+  });
 
-  form.addEventListener('input', () => snapshot());
-  form.addEventListener('change', () => snapshot());
-
-  // Clear draft after a successful save
-  const url = new URL(window.location.href);
-  if (url.searchParams.get('saved') === '1') {
-    try { localStorage.removeItem(key); } catch (e) {}
-  }
-})();
+  // Optional: when mode=selected, open all by default (so you immediately see them)
+  {% if mode == "selected" %}
+  window.addEventListener('load', () => {
+    getAllCollapses().forEach(el => bootstrap.Collapse.getOrCreateInstance(el, {toggle:false}).show());
+  });
+  {% endif %}
 </script>
+
+<!-- Bootstrap JS (if not already globally included) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 {% endblock %}
