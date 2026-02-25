@@ -254,7 +254,9 @@ def index(request: Request, db: Session = Depends(get_db), q: str = ""):
 # =========================
 @app.post("/visits/new")
 def visit_new(db: Session = Depends(get_db)):
-    v = Visit(date_in=dt.datetime.now())
+    # Αφήνουμε date_in κενό ώστε να μπει από τη συσκευή (client) στην πρώτη αποθήκευση.
+    # Έτσι η ώρα/ημερομηνία θα είναι η ίδια με του υπολογιστή/κινητού.
+    v = Visit(date_in=None)
     db.add(v)
     db.commit()
     db.refresh(v)
@@ -277,6 +279,62 @@ def visit_new(db: Session = Depends(get_db)):
     db.commit()
 
     return RedirectResponse(f"/visits/{v.id}", status_code=302)
+
+
+@app.post("/visits/{visit_id}/add_line")
+def visit_add_line(
+    visit_id: int,
+    new_category: str = Form(""),
+    new_item: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Προσθήκη νέας κατηγορίας/εργασίας χωρίς να χαθούν τα ήδη συμπληρωμένα.
+    Το template κάνει autosave σε localStorage, οπότε μετά το reload επανέρχονται."""
+    new_category = (new_category or "").strip()
+    new_item = (new_item or "").strip()
+    if not new_category or not new_item:
+        return RedirectResponse(f"/visits/{visit_id}", status_code=302)
+
+    visit = db.query(Visit).filter(Visit.id == visit_id).first()
+    if not visit:
+        return RedirectResponse("/", status_code=302)
+
+    # Αν δεν υπάρχει στο master checklist, πρόσθεσέ το
+    exists = (
+        db.query(ChecklistItem)
+        .filter(ChecklistItem.category == new_category, ChecklistItem.name == new_item)
+        .first()
+    )
+    if not exists:
+        db.add(ChecklistItem(category=new_category, name=new_item))
+        db.commit()
+
+    # Αν δεν υπάρχει ήδη γραμμή για αυτή την επίσκεψη, πρόσθεσέ την
+    line_exists = (
+        db.query(VisitChecklistLine)
+        .filter(
+            VisitChecklistLine.visit_id == visit_id,
+            VisitChecklistLine.category == new_category,
+            VisitChecklistLine.item_name == new_item,
+        )
+        .first()
+    )
+    if not line_exists:
+        db.add(
+            VisitChecklistLine(
+                visit_id=visit_id,
+                category=new_category,
+                item_name=new_item,
+                result="OK",
+                notes="",
+                parts_code="",
+                parts_qty=0,
+                exclude_from_print=False,
+            )
+        )
+        db.commit()
+
+    return RedirectResponse(f"/visits/{visit_id}", status_code=302)
 
 
 @app.get("/visits/{visit_id}", response_class=HTMLResponse)
@@ -328,7 +386,7 @@ async def visit_save_all(
     form = await request.form()
 
     # update visit fields
-    visit.job_no = (form.get("job_no") or "").strip() or None
+    # job_no δεν χρησιμοποιείται πλέον (κρατάμε μόνο το id)
     visit.plate_number = (form.get("plate_number") or "").strip() or None
     visit.vin = (form.get("vin") or "").strip() or None
     visit.customer_name = (form.get("customer_name") or "").strip() or None
@@ -391,30 +449,8 @@ async def visit_save_all(
                     )
                 )
 
-    # add new checklist item (optional)
-    new_cat = (form.get("new_category") or "").strip()
-    new_item = (form.get("new_item") or "").strip()
-    if new_cat and new_item:
-        exists = db.query(ChecklistItem).filter(ChecklistItem.category == new_cat, ChecklistItem.name == new_item).first()
-        if not exists:
-            db.add(ChecklistItem(category=new_cat, name=new_item))
-            db.commit()  # need id
-        # also add to this visit as a new line
-        db.add(
-            VisitChecklistLine(
-                visit_id=visit.id,
-                category=new_cat,
-                item_name=new_item,
-                result="OK",
-                notes="",
-                parts_code="",
-                parts_qty=0,
-                exclude_from_print=False,
-            )
-        )
-
     db.commit()
-    return RedirectResponse(f"/visits/{visit_id}?mode=all", status_code=302)
+    return RedirectResponse(f"/visits/{visit_id}?mode=all&saved=1", status_code=302)
 
 
 # =========================
@@ -498,6 +534,23 @@ def checklist_add(
         if not exists:
             db.add(ChecklistItem(category=category, name=name))
             db.commit()
+    return RedirectResponse("/checklist", status_code=302)
+
+
+@app.post("/checklist/edit/{item_id}")
+def checklist_edit(
+    item_id: int,
+    db: Session = Depends(get_db),
+    category: str = Form(...),
+    name: str = Form(...),
+):
+    category = (category or "").strip()
+    name = (name or "").strip()
+    it = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
+    if it and category and name:
+        it.category = category
+        it.name = name
+        db.commit()
     return RedirectResponse("/checklist", status_code=302)
 
 @app.post("/checklist/delete/{item_id}")

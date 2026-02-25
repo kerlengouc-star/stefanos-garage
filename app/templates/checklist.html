@@ -1,42 +1,71 @@
 {% extends 'base.html' %}
 {% block content %}
+
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-  <div class="fs-4 fw-semibold">Checklist Admin</div>
+  <div class="fs-4 fw-semibold">Checklist</div>
   <div class="ms-auto"><a class="btn btn-outline-secondary" href="/">Πίσω</a></div>
 </div>
 
-<div class="card mb-3">
-  <div class="card-header fw-semibold">Προσθήκη Item</div>
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-semibold">Προσθήκη Κατηγορίας / Εργασίας</div>
   <div class="card-body">
     <form method="post" action="/checklist/add" class="row g-2">
       <div class="col-md-5"><input class="form-control" name="category" placeholder="Κατηγορία" required></div>
       <div class="col-md-5"><input class="form-control" name="name" placeholder="Εργασία" required></div>
       <div class="col-md-2"><button class="btn btn-primary w-100">Add</button></div>
     </form>
-    <div class="small-muted mt-2">Τα items μπαίνουν σαν default γραμμές σε κάθε νέα επίσκεψη.</div>
+    <div class="small-muted mt-2">Τα items μπαίνουν ως default γραμμές σε κάθε νέα επίσκεψη.</div>
   </div>
 </div>
 
-<div class="card">
+<div class="card shadow-sm">
   <div class="card-header fw-semibold">Υπάρχοντα Items ({{ items|length }})</div>
   <div class="card-body p-0">
-    <table class="table table-striped mb-0">
-      <thead><tr><th>ID</th><th>Κατηγορία</th><th>Εργασία</th><th></th></tr></thead>
-      <tbody>
-      {% for it in items %}
-        <tr>
-          <td class="mono">{{ it.id }}</td>
-          <td>{{ it.category }}</td>
-          <td>{{ it.name }}</td>
-          <td class="text-end">
-            <form method="post" action="/checklist/delete/{{ it.id }}" onsubmit="return confirm('Delete item?');">
-              <button class="btn btn-sm btn-outline-danger">Delete</button>
-            </form>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="table table-striped mb-0 align-middle">
+        <thead>
+          <tr>
+            <th style="width:80px">ID</th>
+            <th style="width:240px">Κατηγορία</th>
+            <th>Εργασία</th>
+            <th style="width:220px"></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for it in items %}
+          <tr>
+            <td class="mono">{{ it.id }}</td>
+            <td>
+              <span class="badge text-bg-light">{{ it.category }}</span>
+            </td>
+            <td>{{ it.name }}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#edit{{ it.id }}">Edit</button>
+              <form method="post" action="/checklist/delete/{{ it.id }}" class="d-inline" onsubmit="return confirm('Delete item?');">
+                <button class="btn btn-sm btn-outline-danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          <tr class="collapse" id="edit{{ it.id }}">
+            <td colspan="4">
+              <form method="post" action="/checklist/edit/{{ it.id }}" class="row g-2">
+                <div class="col-md-4">
+                  <input class="form-control" name="category" value="{{ it.category }}" required>
+                </div>
+                <div class="col-md-6">
+                  <input class="form-control" name="name" value="{{ it.name }}" required>
+                </div>
+                <div class="col-md-2">
+                  <button class="btn btn-success w-100">Save</button>
+                </div>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
+
 {% endblock %}
