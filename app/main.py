@@ -293,12 +293,8 @@ def visit_add_line(
     new_category = (new_category or "").strip()
     new_item = (new_item or "").strip()
     if not new_category or not new_item:
-        mode = (form.get("mode") or "all").strip()
-if mode not in ("all", "selected"):
-    mode = "all"
-return RedirectResponse(f"/visits/{visit_id}?mode={mode}", status_code=302)
-
-    visit = db.query(Visit).filter(Visit.id == visit_id).first()
+       return RedirectResponse(f"/visits/{visit_id}", status_code=302)
+ visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
