@@ -5,14 +5,6 @@ from datetime import datetime
 from .db import Base
 
 
-
-class ChecklistCategory(Base):
-    __tablename__ = "checklist_categories"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True, nullable=False)
-
-
 class ChecklistItem(Base):
     __tablename__ = "checklist_items"
 
@@ -45,6 +37,7 @@ class Visit(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    job_no = Column(String, nullable=True)
 
     date_in = Column(DateTime, nullable=True)
     date_out = Column(DateTime, nullable=True)

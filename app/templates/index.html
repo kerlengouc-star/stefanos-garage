@@ -2,7 +2,7 @@
 {% block content %}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
   <form method="get" action="/" class="d-flex gap-2">
-    <input class="form-control" style="min-width:280px" name="q" value="{{ q }}" placeholder="Αναζήτηση: όνομα, πινακίδα, τηλέφωνο, email, μοντέλο, VIN">
+    <input class="form-control" style="min-width:280px" name="q" value="{{ q }}" placeholder="Αναζήτηση: όνομα, πινακίδα, τηλέφωνο, email, μοντέλο, VIN, job">
     <button class="btn btn-primary">Αναζήτηση</button>
   </form>
 
@@ -33,11 +33,12 @@
 <div class="card">
   <div class="card-header fw-semibold">Τελευταίες Επισκέψεις</div>
   <div class="card-body p-0">
-    <table class="table  mb-0">
+    <table class="table table-striped mb-0">
       <thead>
         <tr>
           <th>ID</th>
-                    <th>Πελάτης</th>
+          <th>Job</th>
+          <th>Πελάτης</th>
           <th>Πινακίδα</th>
           <th>Τηλέφωνο</th>
           <th>Ημ/νία Άφιξης</th>
@@ -48,7 +49,8 @@
       {% for v in visits %}
         <tr>
           <td class="mono">{{ v.id }}</td>
-<td>{{ v.customer_name or '' }}</td>
+          <td class="mono">{{ v.job_no or '' }}</td>
+          <td>{{ v.customer_name or '' }}</td>
           <td class="mono">{{ v.plate_number or '' }}</td>
           <td class="mono">{{ v.phone or '' }}</td>
           <td class="mono">{{ (v.date_in.strftime('%d/%m/%Y %H:%M') if v.date_in else '') }}</td>

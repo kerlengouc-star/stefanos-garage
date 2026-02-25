@@ -72,7 +72,7 @@ def build_jobcard_pdf(company: dict, visit: dict, lines: list[dict]) -> bytes:
     y -= 20
 
     c.setFont(FONT, 12)
-    c.drawString(x, y, f"Visit ID: {visit.get('id', '')}")
+    c.drawString(x, y, f"JOB: {visit.get('job_no', '')}")
     y -= 18
 
     c.setFont(FONT, 10)
