@@ -1,4 +1,4 @@
-// Stefanos Garage - Reliable update banner based on HTML meta version (no version.json)
+// Stefanos Garage - Reliable update banner based on HTML meta version
 
 const STORAGE_KEY = "stefanos_garage_app_version_seen";
 
@@ -36,7 +36,7 @@ function showUpdateBanner(newVersion) {
       }
     } catch (e) {}
 
-    // Reload hard
+    // Reload
     window.location.reload();
   };
 }
@@ -53,7 +53,7 @@ function checkAndShowBanner() {
     return;
   }
 
-  // New version detected
+  // New version detected -> show banner
   if (lastSeen !== current) {
     localStorage.setItem(STORAGE_KEY, current);
     showUpdateBanner(current);
