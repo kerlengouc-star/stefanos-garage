@@ -1,4 +1,4 @@
-// Stefanos Garage - Reliable update banner based on HTML meta version
+// Stefanos Garage - Reliable update banner based on HTML meta version (v7)
 
 const STORAGE_KEY = "stefanos_garage_app_version_seen";
 
@@ -60,11 +60,12 @@ function checkAndShowBanner() {
   }
 }
 
-// Keep SW registration for offline caching (banner does NOT depend on SW waiting)
+// Register SW for offline (but do NOT rely on SW waiting for banner)
 async function registerSW() {
   if (!("serviceWorker" in navigator)) return;
   try {
-    await navigator.serviceWorker.register("/static/sw.js");
+    // versioned register helps Android pick up newest SW
+    await navigator.serviceWorker.register("/static/sw.js?v=v7");
   } catch (e) {}
 }
 
