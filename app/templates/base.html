@@ -8,8 +8,11 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
   <!-- PWA -->
-  <link rel="manifest" href="/static/manifest.webmanifest?v=v4">
+  <link rel="manifest" href="/static/manifest.webmanifest?v=v5">
   <meta name="theme-color" content="#111827">
+
+  <!-- APP VERSION (for update banner) -->
+  <meta name="app-version" content="v5">
 
   <style>
     body { padding: 18px; background: #f5f6f8; }
@@ -50,7 +53,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-<!-- versioned load to bypass cache -->
-<script src="/static/app.js?v=v4"></script>
+<!-- IMPORTANT: versioned to bypass cache -->
+<script src="/static/app.js?v=v5"></script>
 </body>
 </html>
