@@ -1,5 +1,5 @@
 // Stefanos Garage PWA Service Worker
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const CACHE_NAME = `stefanos-garage-${CACHE_VERSION}`;
 
 const ASSETS = [
