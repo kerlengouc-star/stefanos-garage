@@ -1,73 +1,78 @@
-// Stefanos Garage Update System (no TEST)
+// Stefanos Garage - Version-based update banner (reliable on Android PWA)
 
-async function registerSW() {
-  if (!("serviceWorker" in navigator)) return;
+const VERSION_URL = "/static/version.json";
+const STORAGE_KEY = "stefanos_garage_version_seen";
 
-  try {
-    const registration = await navigator.serviceWorker.register("/static/sw.js?v=dev4");
-
-    // Αν υπάρχει ήδη νέα έκδοση έτοιμη (waiting)
-    if (registration.waiting && navigator.serviceWorker.controller) {
-      showUpdateBanner(registration);
-    }
-
-    // Αν βρεθεί νέα έκδοση
-    registration.addEventListener("updatefound", () => {
-      const newWorker = registration.installing;
-      if (!newWorker) return;
-
-      newWorker.addEventListener("statechange", () => {
-        if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-          showUpdateBanner(registration);
-        }
-      });
-    });
-
-    // περιοδικό update check
-    setInterval(() => registration.update().catch(() => {}), 60000);
-  } catch (e) {
-    console.log("SW registration failed:", e);
-  }
-}
-
-function showUpdateBanner(registration) {
+function showUpdateBanner(newVersion) {
   if (document.getElementById("update-banner")) return;
 
-  const banner = document.createElement("div");
-  banner.id = "update-banner";
-  banner.style.cssText =
-    "position:fixed;bottom:15px;left:15px;right:15px;" +
-    "background:#198754;color:#fff;padding:14px 16px;" +
-    "border-radius:12px;display:flex;justify-content:space-between;" +
-    "align-items:center;font-size:14px;z-index:9999;" +
-    "box-shadow:0 8px 20px rgba(0,0,0,0.25);";
+  const el = document.createElement("div");
+  el.id = "update-banner";
+  el.style.cssText =
+    "position:fixed;bottom:12px;left:12px;right:12px;z-index:9999;" +
+    "background:#198754;color:#fff;padding:12px 14px;border-radius:12px;" +
+    "display:flex;gap:12px;align-items:center;justify-content:space-between;" +
+    "box-shadow:0 10px 30px rgba(0,0,0,.2);font-size:14px;";
 
-  banner.innerHTML = `
-    <div>Υπάρχει νέα έκδοση — Ανανεώστε</div>
-    <button id="update-now"
-      style="background:#fff;color:#198754;border:none;
-      padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;">
+  el.innerHTML = `
+    <div>Υπάρχει νέα έκδοση (${newVersion}) — Ανανεώστε</div>
+    <button id="update-btn" style="background:#fff;color:#198754;border:0;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600;">
       Ανανεώστε
     </button>
   `;
 
-  document.body.appendChild(banner);
+  document.body.appendChild(el);
 
-  document.getElementById("update-now").onclick = () => {
-    if (registration.waiting) {
-      registration.waiting.postMessage({ type: "SKIP_WAITING" });
-    } else {
-      // fallback
-      window.location.reload();
-    }
+  document.getElementById("update-btn").onclick = async () => {
+    try {
+      // Clear SW caches for a truly fresh reload
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) {}
+
+    // Hard reload
+    window.location.reload(true);
   };
 }
 
-// όταν αλλάξει controller → refresh
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    window.location.reload();
-  });
+async function checkVersionAndMaybeShowBanner() {
+  try {
+    const res = await fetch(`${VERSION_URL}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const v = (data && data.version) ? String(data.version) : "";
+    if (!v) return;
+
+    const lastSeen = localStorage.getItem(STORAGE_KEY);
+
+    // First run: store version, no banner
+    if (!lastSeen) {
+      localStorage.setItem(STORAGE_KEY, v);
+      return;
+    }
+
+    // New version: show banner
+    if (lastSeen !== v) {
+      showUpdateBanner(v);
+      // update stored version so banner doesn't loop forever
+      localStorage.setItem(STORAGE_KEY, v);
+    }
+  } catch (e) {
+    // ignore
+  }
 }
 
-registerSW();
+// Still register SW (for offline caching), but banner does NOT depend on it
+(async function registerSW() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    await navigator.serviceWorker.register(`/static/sw.js?v=${Date.now()}`);
+  } catch (e) {}
+})();
+
+window.addEventListener("load", () => {
+  checkVersionAndMaybeShowBanner();
+});
