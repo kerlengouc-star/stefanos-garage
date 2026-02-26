@@ -6,7 +6,7 @@ const ASSETS = [
   "/",
   "/history",
   "/checklist",
-  "/static/manifest.webmanifest?v=dev3",
+  "/static/manifest.webmanifest?v=dev4",
   "/static/icon-192.png",
   "/static/icon-512.png"
 ];
@@ -29,7 +29,6 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-// HTML: network-first, fallback cache
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
@@ -47,7 +46,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // assets: cache-first
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
