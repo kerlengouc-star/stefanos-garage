@@ -1,19 +1,15 @@
-// Stefanos Garage PWA Service Worker
-const CACHE_VERSION = "v4";
-const CACHE_NAME = `stefanos-garage-${CACHE_VERSION}`;
+// Simple offline cache (banner is handled by version.json, not SW waiting)
+const CACHE_NAME = "stefanos-garage-offline-v4";
 
 const ASSETS = [
   "/",
   "/history",
   "/checklist",
-  "/static/manifest.webmanifest?v=dev4",
+  "/static/manifest.webmanifest?v=v4",
   "/static/icon-192.png",
-  "/static/icon-512.png"
+  "/static/icon-512.png",
+  "/static/version.json"
 ];
-
-self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
-});
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -22,11 +18,7 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())));
-    await self.clients.claim();
-  })());
+  event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener("fetch", (event) => {
@@ -35,25 +27,12 @@ self.addEventListener("fetch", (event) => {
 
   if (req.mode === "navigate") {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
-          return res;
-        })
-        .catch(async () => (await caches.match(req)) || (await caches.match("/")))
+      fetch(req).catch(async () => (await caches.match("/")) || Response.error())
     );
     return;
   }
 
   event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) return cached;
-      return fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
-        return res;
-      }).catch(() => cached);
-    })
+    caches.match(req).then((cached) => cached || fetch(req))
   );
 });
