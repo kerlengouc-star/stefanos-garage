@@ -1,7 +1,11 @@
-// Stefanos Garage - Version-based update banner (reliable on Android PWA)
+// Stefanos Garage - Reliable update banner based on HTML meta version (no version.json)
 
-const VERSION_URL = "/static/version.json";
-const STORAGE_KEY = "stefanos_garage_version_seen";
+const STORAGE_KEY = "stefanos_garage_app_version_seen";
+
+function getHtmlVersion() {
+  const meta = document.querySelector('meta[name="app-version"]');
+  return meta ? String(meta.getAttribute("content") || "").trim() : "";
+}
 
 function showUpdateBanner(newVersion) {
   if (document.getElementById("update-banner")) return;
@@ -25,54 +29,46 @@ function showUpdateBanner(newVersion) {
 
   document.getElementById("update-btn").onclick = async () => {
     try {
-      // Clear SW caches for a truly fresh reload
+      // Delete caches to force fresh assets
       if ("caches" in window) {
         const keys = await caches.keys();
         await Promise.all(keys.map((k) => caches.delete(k)));
       }
     } catch (e) {}
 
-    // Hard reload
-    window.location.reload(true);
+    // Reload hard
+    window.location.reload();
   };
 }
 
-async function checkVersionAndMaybeShowBanner() {
-  try {
-    const res = await fetch(`${VERSION_URL}?t=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) return;
+function checkAndShowBanner() {
+  const current = getHtmlVersion();
+  if (!current) return;
 
-    const data = await res.json();
-    const v = (data && data.version) ? String(data.version) : "";
-    if (!v) return;
+  const lastSeen = localStorage.getItem(STORAGE_KEY);
 
-    const lastSeen = localStorage.getItem(STORAGE_KEY);
+  // First run: store only, no banner
+  if (!lastSeen) {
+    localStorage.setItem(STORAGE_KEY, current);
+    return;
+  }
 
-    // First run: store version, no banner
-    if (!lastSeen) {
-      localStorage.setItem(STORAGE_KEY, v);
-      return;
-    }
-
-    // New version: show banner
-    if (lastSeen !== v) {
-      showUpdateBanner(v);
-      // update stored version so banner doesn't loop forever
-      localStorage.setItem(STORAGE_KEY, v);
-    }
-  } catch (e) {
-    // ignore
+  // New version detected
+  if (lastSeen !== current) {
+    localStorage.setItem(STORAGE_KEY, current);
+    showUpdateBanner(current);
   }
 }
 
-// Still register SW (for offline caching), but banner does NOT depend on it
-(async function registerSW() {
+// Keep SW registration for offline caching (banner does NOT depend on SW waiting)
+async function registerSW() {
   if (!("serviceWorker" in navigator)) return;
   try {
-    await navigator.serviceWorker.register(`/static/sw.js?v=${Date.now()}`);
+    await navigator.serviceWorker.register("/static/sw.js");
   } catch (e) {}
-})();
+}
 
 window.addEventListener("load", () => {
-  checkVersionAndMaybeShowBanner();
+  registerSW();
+  checkAndShowBanner();
 });
