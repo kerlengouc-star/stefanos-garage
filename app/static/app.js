@@ -1,32 +1,32 @@
-// Stefanos Garage Update System (Production Ready)
+// Stefanos Garage Update System (no TEST)
 
 async function registerSW() {
   if (!("serviceWorker" in navigator)) return;
 
   try {
-    const registration = await navigator.serviceWorker.register("/static/sw.js?v=dev3");
+    const registration = await navigator.serviceWorker.register("/static/sw.js?v=dev4");
 
-    // Αν υπάρχει ήδη νέα έκδοση
-    if (registration.waiting) {
+    // Αν υπάρχει ήδη νέα έκδοση έτοιμη (waiting)
+    if (registration.waiting && navigator.serviceWorker.controller) {
       showUpdateBanner(registration);
     }
 
+    // Αν βρεθεί νέα έκδοση
     registration.addEventListener("updatefound", () => {
       const newWorker = registration.installing;
       if (!newWorker) return;
 
       newWorker.addEventListener("statechange", () => {
-        if (
-          newWorker.state === "installed" &&
-          navigator.serviceWorker.controller
-        ) {
+        if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
           showUpdateBanner(registration);
         }
       });
     });
 
-  } catch (err) {
-    console.log("SW registration failed:", err);
+    // περιοδικό update check
+    setInterval(() => registration.update().catch(() => {}), 60000);
+  } catch (e) {
+    console.log("SW registration failed:", e);
   }
 }
 
@@ -56,13 +56,18 @@ function showUpdateBanner(registration) {
   document.getElementById("update-now").onclick = () => {
     if (registration.waiting) {
       registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    } else {
+      // fallback
+      window.location.reload();
     }
   };
 }
 
-// Όταν αλλάξει controller → refresh
-navigator.serviceWorker?.addEventListener("controllerchange", () => {
-  window.location.reload();
-});
+// όταν αλλάξει controller → refresh
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    window.location.reload();
+  });
+}
 
 registerSW();
