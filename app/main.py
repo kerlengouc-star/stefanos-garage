@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal, engine, Base
 from .models import Visit, ChecklistItem, PartMemory
 
-# IMPORTANT: keep the original email/pdf utils that exist in your project
+# Keep ORIGINAL utils names used in your project
 from .email_utils import send_email_with_pdf
-from .pdf_utils import generate_visit_pdf_bytes
+from .pdf_utils import render_visit_pdf
 
 
 Base.metadata.create_all(bind=engine)
@@ -34,7 +34,6 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-# Static files
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Serve service worker at site root so it controls ALL pages (scope=/)
@@ -106,7 +105,6 @@ def group_checklist(db: Session) -> Dict[str, List[ChecklistItem]]:
 # ---------------- Pages ----------------
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, q: str = "", db: Session = Depends(get_db)):
-    # keep it simple: latest visits
     visits = db.query(Visit).order_by(Visit.id.desc()).limit(50).all()
     return templates.TemplateResponse("index.html", {"request": request, "visits": visits, "q": q})
 
@@ -206,7 +204,7 @@ def visit_pdf(visit_id: int, db: Session = Depends(get_db)):
     if not v:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
 
-    pdf_bytes = generate_visit_pdf_bytes(v, db)
+    pdf_bytes = render_visit_pdf(v, db)
     return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf")
 
 
@@ -271,7 +269,6 @@ def backup_export(db: Session = Depends(get_db)):
 
 @app.post("/backup/import")
 def backup_import(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    # keep as placeholder (your existing project handles this)
     _ = file.file.read()
     return JSONResponse({"ok": True})
 
