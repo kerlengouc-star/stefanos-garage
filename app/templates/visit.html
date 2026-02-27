@@ -259,17 +259,30 @@
 <div class="card mt-3 no-print">
   <div class="card-header fw-semibold">Προσθήκη νέας κατηγορίας / εργασίας</div>
   <div class="card-body">
-    <form id="add-line-form" method="post" action="/visits/{{ visit.id }}/add_line" class="row g-2">
-      <div class="col-md-5">
-        <input class="form-control" name="new_category" placeholder="Κατηγορία" required>
-      </div>
-      <div class="col-md-5">
-        <input class="form-control" name="new_item" placeholder="Εργασία" required>
-      </div>
-      <div class="col-md-2">
-        <button class="btn btn-outline-primary w-100">Προσθήκη</button>
-      </div>
-    </form>
+    <form id="add-line-form" method="post" action="/visits/{{ visit.id }}/add_line" class="row g-2 align-items-end">
+  <div class="col-md-4">
+    <label class="form-label">Κατηγορία</label>
+    <input class="form-control" name="new_category" placeholder="π.χ. ΦΡΕΝΑ" required>
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Εργασία</label>
+    <input class="form-control" name="new_item" placeholder="π.χ. Αλλαγή τακάκια" required>
+  </div>
+
+  <div class="col-md-2">
+    <div class="form-check mt-4">
+      <input class="form-check-input" type="checkbox" id="make_permanent" name="make_permanent">
+      <label class="form-check-label" for="make_permanent">
+        Μόνιμη
+      </label>
+    </div>
+  </div>
+
+  <div class="col-md-2">
+    <button class="btn btn-outline-primary w-100">Προσθήκη</button>
+  </div>
+</form>
     <div class="small-muted mt-2">Η σειρά είναι αλφαβητική. Ο αριθμός δείχνει πόσες κατηγορίες υπάρχουν.</div>
   </div>
 </div>
