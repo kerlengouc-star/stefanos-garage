@@ -1,14 +1,15 @@
 // Stefanos Garage Offline Queue + Sync + Toasts
-// Uses ROOT service worker at /sw.js so pages work offline.
+// Uses ROOT service worker registered at /sw.js for full-site offline.
 
-const OFFLINE_QUEUE_KEY = "garage_offline_queue_v1";
+const OFFLINE_QUEUE_KEY = "garage_offline_queue_v2";
 
 // ---------- Toast ----------
-function toast(msg) {
+function toast(msg, ok = true) {
   const el = document.createElement("div");
   el.style.cssText =
     "position:fixed;bottom:20px;left:20px;right:20px;z-index:999999;" +
-    "background:#198754;color:#fff;padding:12px 14px;border-radius:12px;" +
+    `background:${ok ? "#198754" : "#dc3545"};color:#fff;` +
+    "padding:12px 14px;border-radius:12px;" +
     "box-shadow:0 10px 30px rgba(0,0,0,.2);font-size:14px;";
   el.textContent = msg;
   document.body.appendChild(el);
@@ -36,14 +37,16 @@ async function syncQueue() {
 
   for (const item of q) {
     try {
-      await fetch(item.url, {
+      const res = await fetch(item.url, {
         method: item.method || "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: item.body,
         credentials: "same-origin",
       });
+      if (!res.ok) throw new Error("HTTP " + res.status);
     } catch (e) {
       // stop at first failure; keep queue
+      toast("Αποτυχία συγχρονισμού — θα ξαναδοκιμάσει μόλις έχει internet.", false);
       return;
     }
   }
@@ -52,8 +55,13 @@ async function syncQueue() {
   toast("Offline δεδομένα συγχρονίστηκαν ✅");
 }
 
-window.addEventListener("online", syncQueue);
-window.addEventListener("load", syncQueue);
+window.addEventListener("online", () => {
+  // give the connection a moment
+  setTimeout(syncQueue, 800);
+});
+window.addEventListener("load", () => {
+  setTimeout(syncQueue, 800);
+});
 
 // ---------- Register Service Worker (ROOT scope) ----------
 async function registerSW() {
@@ -80,7 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     enqueue({
       url: form.action,
-      method: form.method || "POST",
+      method: (form.method || "POST").toUpperCase(),
       body: params.toString(),
       ts: Date.now(),
     });
