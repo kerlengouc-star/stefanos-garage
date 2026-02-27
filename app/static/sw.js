@@ -1,7 +1,7 @@
-// Stefanos Garage PWA Service Worker - OFFLINE SHELL v9
-// Στόχος: να ανοίγει offline η εφαρμογή και ειδικά η "Νέα Επίσκεψη" (/visits/new)
+// Stefanos Garage PWA Service Worker (ROOT scope via /sw.js)
+// Offline shell: must open /visits/new offline.
 
-const CACHE_NAME = "stefanos-garage-offline-shell-v9";
+const CACHE_NAME = "stefanos-garage-offline-shell-v10";
 
 const OFFLINE_PAGES = [
   "/",
@@ -15,15 +15,13 @@ const STATIC_ASSETS = [
   "/static/icon-192.png",
   "/static/icon-512.png",
   "/static/app.js",
-  "/static/sw.js"
+  "/sw.js"
 ];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll([...OFFLINE_PAGES, ...STATIC_ASSETS]);
-    }).catch(() => {})
+    caches.open(CACHE_NAME).then((cache) => cache.addAll([...OFFLINE_PAGES, ...STATIC_ASSETS])).catch(() => {})
   );
 });
 
@@ -36,7 +34,7 @@ self.addEventListener("activate", (event) => {
 });
 
 function isStatic(url) {
-  return url.pathname.startsWith("/static/");
+  return url.pathname.startsWith("/static/") || url.pathname === "/sw.js";
 }
 
 self.addEventListener("fetch", (event) => {
@@ -45,7 +43,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
 
-  // 1) Static: cache-first
+  // Static: cache-first
   if (isStatic(url)) {
     event.respondWith(
       caches.match(req).then((cached) => cached || fetch(req).then((res) => {
@@ -57,16 +55,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 2) Pages: network-first, fallback cache
+  // Pages: network-first, fallback cache
   if (req.mode === "navigate") {
     event.respondWith(
       fetch(req).then((res) => {
-        // cache the latest HTML page when online
         const copy = res.clone();
         caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
         return res;
       }).catch(async () => {
-        // offline fallback: try exact page, else /visits/new, else /
         return (await caches.match(req))
           || (await caches.match("/visits/new"))
           || (await caches.match("/"));
@@ -75,8 +71,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 3) Other GET: try cache, then network
-  event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req))
-  );
+  // Other GET: cache then network
+  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
