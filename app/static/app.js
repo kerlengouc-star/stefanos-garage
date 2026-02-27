@@ -1,75 +1,111 @@
-// Stefanos Garage - Reliable update banner based on HTML meta version (v7)
+// ===============================
+// Stefanos Garage Offline System
+// ===============================
 
-const STORAGE_KEY = "stefanos_garage_app_version_seen";
+const OFFLINE_QUEUE_KEY = "garage-offline-queue";
 
-function getHtmlVersion() {
-  const meta = document.querySelector('meta[name="app-version"]');
-  return meta ? String(meta.getAttribute("content") || "").trim() : "";
-}
-
-function showUpdateBanner(newVersion) {
-  if (document.getElementById("update-banner")) return;
-
-  const el = document.createElement("div");
-  el.id = "update-banner";
-  el.style.cssText =
-    "position:fixed;bottom:12px;left:12px;right:12px;z-index:9999;" +
-    "background:#198754;color:#fff;padding:12px 14px;border-radius:12px;" +
-    "display:flex;gap:12px;align-items:center;justify-content:space-between;" +
-    "box-shadow:0 10px 30px rgba(0,0,0,.2);font-size:14px;";
-
-  el.innerHTML = `
-    <div>Υπάρχει νέα έκδοση (${newVersion}) — Ανανεώστε</div>
-    <button id="update-btn" style="background:#fff;color:#198754;border:0;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600;">
-      Ανανεώστε
-    </button>
-  `;
-
-  document.body.appendChild(el);
-
-  document.getElementById("update-btn").onclick = async () => {
-    try {
-      // Delete caches to force fresh assets
-      if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-    } catch (e) {}
-
-    // Reload
-    window.location.reload();
-  };
-}
-
-function checkAndShowBanner() {
-  const current = getHtmlVersion();
-  if (!current) return;
-
-  const lastSeen = localStorage.getItem(STORAGE_KEY);
-
-  // First run: store only, no banner
-  if (!lastSeen) {
-    localStorage.setItem(STORAGE_KEY, current);
-    return;
-  }
-
-  // New version detected -> show banner
-  if (lastSeen !== current) {
-    localStorage.setItem(STORAGE_KEY, current);
-    showUpdateBanner(current);
-  }
-}
-
-// Register SW for offline (but do NOT rely on SW waiting for banner)
+// --------------------------------
+// Service Worker registration
+// --------------------------------
 async function registerSW() {
   if (!("serviceWorker" in navigator)) return;
+
   try {
-    // versioned register helps Android pick up newest SW
-    await navigator.serviceWorker.register("/static/sw.js?v=v7");
+    await navigator.serviceWorker.register("/static/sw.js");
   } catch (e) {}
 }
 
-window.addEventListener("load", () => {
-  registerSW();
-  checkAndShowBanner();
+registerSW();
+
+// --------------------------------
+// Offline Queue Logic
+// --------------------------------
+function getQueue() {
+  try {
+    return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveQueue(queue) {
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+}
+
+function addToQueue(payload) {
+  const queue = getQueue();
+  queue.push(payload);
+  saveQueue(queue);
+}
+
+async function syncQueue() {
+  if (!navigator.onLine) return;
+
+  const queue = getQueue();
+  if (!queue.length) return;
+
+  for (const item of queue) {
+    try {
+      await fetch(item.url, {
+        method: item.method,
+        body: item.body,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+      });
+    } catch (e) {
+      return; // αν αποτύχει, σταματά
+    }
+  }
+
+  localStorage.removeItem(OFFLINE_QUEUE_KEY);
+  showToast("Offline δεδομένα συγχρονίστηκαν ✅");
+}
+
+window.addEventListener("online", syncQueue);
+window.addEventListener("load", syncQueue);
+
+// --------------------------------
+// Toast message
+// --------------------------------
+function showToast(msg) {
+  const el = document.createElement("div");
+  el.style.position = "fixed";
+  el.style.bottom = "20px";
+  el.style.left = "20px";
+  el.style.background = "#198754";
+  el.style.color = "#fff";
+  el.style.padding = "10px 14px";
+  el.style.borderRadius = "10px";
+  el.style.zIndex = "9999";
+  el.innerText = msg;
+  document.body.appendChild(el);
+
+  setTimeout(() => el.remove(), 3000);
+}
+
+// --------------------------------
+// Intercept visit form submit
+// --------------------------------
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("visit-form");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    if (navigator.onLine) return;
+
+    e.preventDefault();
+
+    const formData = new FormData(form);
+    const params = new URLSearchParams();
+    for (const pair of formData.entries()) {
+      params.append(pair[0], pair[1]);
+    }
+
+    addToQueue({
+      url: form.action,
+      method: form.method || "POST",
+      body: params.toString()
+    });
+
+    showToast("Αποθηκεύτηκε offline 📦");
+  });
 });
