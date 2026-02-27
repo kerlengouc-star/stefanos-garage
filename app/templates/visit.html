@@ -57,11 +57,23 @@
     <div class="small-muted">Mode: {{ mode }}</div>
   </div>
 
-  <div class="d-flex gap-2 no-print flex-wrap">
+  <div class="d-flex gap-2 no-print flex-wrap align-items-center">
+
     <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}?mode=all">Όλα</a>
     <a class="btn btn-outline-secondary btn-sm" href="/visits/{{ visit.id }}?mode=selected">Μόνο επιλεγμένα</a>
+
     <a class="btn btn-outline-primary btn-sm" href="/visits/{{ visit.id }}/print" target="_blank">Print</a>
     <a class="btn btn-outline-primary btn-sm" href="/visits/{{ visit.id }}/pdf" target="_blank">PDF</a>
+
+    <!-- ✅ Send Email (POST) -->
+    <form method="post" action="/visits/{{ visit.id }}/email" class="m-0 p-0">
+      <button type="submit"
+              class="btn btn-success btn-sm"
+              {% if not (visit.email or '').strip() %}disabled{% endif %}>
+        Send Email
+      </button>
+    </form>
+
   </div>
 </div>
 
@@ -69,10 +81,23 @@
   <div class="alert alert-success">Αποθηκεύτηκε ✅</div>
 {% endif %}
 
+{% if request.query_params.get('email_sent') %}
+  <div class="alert alert-success">Το email στάλθηκε ✅</div>
+{% endif %}
+
+{% if request.query_params.get('email_error') %}
+  <div class="alert alert-danger">Σφάλμα αποστολής email (έλεγξε SMTP env vars).</div>
+{% endif %}
+
+{% if not (visit.email or '').strip() %}
+  <div class="alert alert-warning">
+    Δεν υπάρχει email στον πελάτη. Συμπλήρωσε email και πάτα “Αποθήκευση”, μετά μπορείς να στείλεις.
+  </div>
+{% endif %}
+
 <form id="visit-form" method="post" action="/visits/{{ visit.id }}/save_all" class="no-print">
   <input type="hidden" name="mode" value="{{ mode }}">
 
-  <!-- Customer box -->
   <div class="card shadow-sm mb-3">
     <div class="card-header fw-semibold">Στοιχεία Πελάτη & Οχήματος</div>
     <div class="card-body">
@@ -146,7 +171,6 @@
     <span class="small-muted ms-2">Αλφαβητική σειρά + αρίθμηση 1..N</span>
   </div>
 
-  <!-- ✅ SINGLE (ONLY ONE) checklist accordion -->
   <div class="card shadow-sm">
     <div class="card-header d-flex align-items-center justify-content-between">
       <div class="fw-semibold">Checklist</div>
@@ -156,7 +180,6 @@
     <div class="card-body p-0">
       <div class="accordion" id="acc-checklist">
 
-        {# categories from ALL lines, unique + sort #}
         {% set cats = [] %}
         {% for ln in all_lines %}
           {% if ln.category and (ln.category not in cats) %}
@@ -243,7 +266,6 @@
   </div>
 </form>
 
-<!-- Add new category/item -->
 <div class="card mt-3 no-print">
   <div class="card-header fw-semibold">Προσθήκη νέας κατηγορίας / εργασίας</div>
   <div class="card-body">
@@ -291,13 +313,11 @@
     allCollapses().forEach(el => bootstrap.Collapse.getOrCreateInstance(el, {toggle:false}).hide());
   });
 
-  // category count based on cats length (accordion items)
   const catCount = document.getElementById("cat-count");
   if (catCount) {
     catCount.textContent = String(document.querySelectorAll("#acc-checklist .accordion-item").length);
   }
 
-  // Draft autosave (so add_line doesn't wipe selections)
   const visitId = "{{ visit.id }}";
   const key = `visit-draft-${visitId}`;
   const form = document.getElementById("visit-form");
