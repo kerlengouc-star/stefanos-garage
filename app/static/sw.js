@@ -1,7 +1,7 @@
-// Stefanos Garage PWA Service Worker (ROOT scope via /sw.js)
-// Offline shell: must open /visits/new offline.
+// Stefanos Garage PWA Service Worker (ROOT scope: registered as /sw.js)
+// Offline shell + cache static assets
 
-const CACHE_NAME = "stefanos-garage-offline-shell-v10";
+const CACHE_NAME = "stefanos-garage-offline-shell-v11";
 
 const OFFLINE_PAGES = [
   "/",
@@ -21,7 +21,9 @@ const STATIC_ASSETS = [
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll([...OFFLINE_PAGES, ...STATIC_ASSETS])).catch(() => {})
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll([...OFFLINE_PAGES, ...STATIC_ASSETS]))
+      .catch(() => {})
   );
 });
 
@@ -46,11 +48,14 @@ self.addEventListener("fetch", (event) => {
   // Static: cache-first
   if (isStatic(url)) {
     event.respondWith(
-      caches.match(req).then((cached) => cached || fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
-        return res;
-      }))
+      caches.match(req).then((cached) => {
+        if (cached) return cached;
+        return fetch(req).then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
+          return res;
+        });
+      })
     );
     return;
   }
