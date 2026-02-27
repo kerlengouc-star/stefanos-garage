@@ -1,60 +1,75 @@
-// Update banner + TEST banner
+// Stefanos Garage - Reliable update banner based on HTML meta version (v7)
 
-function showBanner(text, color) {
+const STORAGE_KEY = "stefanos_garage_app_version_seen";
+
+function getHtmlVersion() {
+  const meta = document.querySelector('meta[name="app-version"]');
+  return meta ? String(meta.getAttribute("content") || "").trim() : "";
+}
+
+function showUpdateBanner(newVersion) {
   if (document.getElementById("update-banner")) return;
 
   const el = document.createElement("div");
   el.id = "update-banner";
   el.style.cssText =
     "position:fixed;bottom:12px;left:12px;right:12px;z-index:9999;" +
-    `background:${color};color:#fff;padding:12px 14px;border-radius:12px;` +
+    "background:#198754;color:#fff;padding:12px 14px;border-radius:12px;" +
     "display:flex;gap:12px;align-items:center;justify-content:space-between;" +
     "box-shadow:0 10px 30px rgba(0,0,0,.2);font-size:14px;";
 
   el.innerHTML = `
-    <div>${text}</div>
-    <div style="display:flex;gap:8px;">
-      <button id="reload-btn" style="background:#fff;color:#111827;border:0;padding:8px 12px;border-radius:10px;cursor:pointer;">Ανανεώστε</button>
-      <button id="close-btn" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.35);padding:8px 12px;border-radius:10px;cursor:pointer;">Κλείσιμο</button>
-    </div>
+    <div>Υπάρχει νέα έκδοση (${newVersion}) — Ανανεώστε</div>
+    <button id="update-btn" style="background:#fff;color:#198754;border:0;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600;">
+      Ανανεώστε
+    </button>
   `;
 
   document.body.appendChild(el);
-  document.getElementById("reload-btn").onclick = () => window.location.reload();
-  document.getElementById("close-btn").onclick = () => el.remove();
+
+  document.getElementById("update-btn").onclick = async () => {
+    try {
+      // Delete caches to force fresh assets
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) {}
+
+    // Reload
+    window.location.reload();
+  };
 }
 
-async function registerSW() {
-  if (!("serviceWorker" in navigator)) return;
+function checkAndShowBanner() {
+  const current = getHtmlVersion();
+  if (!current) return;
 
-  try {
-    const reg = await navigator.serviceWorker.register("/static/sw.js");
+  const lastSeen = localStorage.getItem(STORAGE_KEY);
 
-    // If a new SW is installed while a controller exists => update available.
-    reg.addEventListener("updatefound", () => {
-      const nw = reg.installing;
-      if (!nw) return;
-      nw.addEventListener("statechange", () => {
-        if (nw.state === "installed" && navigator.serviceWorker.controller) {
-          showBanner("Υπάρχει νέα έκδοση — Ανανεώστε", "#111827");
-        }
-      });
-    });
+  // First run: store only, no banner
+  if (!lastSeen) {
+    localStorage.setItem(STORAGE_KEY, current);
+    return;
+  }
 
-    // Periodic check
-    setInterval(() => reg.update().catch(() => {}), 60000);
-  } catch (e) {
-    // ignore
+  // New version detected -> show banner
+  if (lastSeen !== current) {
+    localStorage.setItem(STORAGE_KEY, current);
+    showUpdateBanner(current);
   }
 }
 
-window.addEventListener("load", () => {
-  // TEST: show for 8 seconds
-  showBanner("TEST: Το banner λειτουργεί σωστά ✅", "#198754");
-  setTimeout(() => {
-    const el = document.getElementById("update-banner");
-    if (el) el.remove();
-  }, 8000);
+// Register SW for offline (but do NOT rely on SW waiting for banner)
+async function registerSW() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    // versioned register helps Android pick up newest SW
+    await navigator.serviceWorker.register("/static/sw.js?v=v7");
+  } catch (e) {}
+}
 
+window.addEventListener("load", () => {
   registerSW();
+  checkAndShowBanner();
 });
