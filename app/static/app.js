@@ -1,75 +1,98 @@
-// Stefanos Garage - Reliable update banner based on HTML meta version (v7)
+// Stefanos Garage Offline Queue + Sync + Toasts
+// Uses ROOT service worker registered at /sw.js for full-site offline.
 
-const STORAGE_KEY = "stefanos_garage_app_version_seen";
+const OFFLINE_QUEUE_KEY = "garage_offline_queue_v2";
 
-function getHtmlVersion() {
-  const meta = document.querySelector('meta[name="app-version"]');
-  return meta ? String(meta.getAttribute("content") || "").trim() : "";
-}
-
-function showUpdateBanner(newVersion) {
-  if (document.getElementById("update-banner")) return;
-
+// ---------- Toast ----------
+function toast(msg, ok = true) {
   const el = document.createElement("div");
-  el.id = "update-banner";
   el.style.cssText =
-    "position:fixed;bottom:12px;left:12px;right:12px;z-index:9999;" +
-    "background:#198754;color:#fff;padding:12px 14px;border-radius:12px;" +
-    "display:flex;gap:12px;align-items:center;justify-content:space-between;" +
+    "position:fixed;bottom:20px;left:20px;right:20px;z-index:999999;" +
+    `background:${ok ? "#198754" : "#dc3545"};color:#fff;` +
+    "padding:12px 14px;border-radius:12px;" +
     "box-shadow:0 10px 30px rgba(0,0,0,.2);font-size:14px;";
-
-  el.innerHTML = `
-    <div>Υπάρχει νέα έκδοση (${newVersion}) — Ανανεώστε</div>
-    <button id="update-btn" style="background:#fff;color:#198754;border:0;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600;">
-      Ανανεώστε
-    </button>
-  `;
-
+  el.textContent = msg;
   document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
 
-  document.getElementById("update-btn").onclick = async () => {
+// ---------- Queue storage ----------
+function getQueue() {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY)) || []; }
+  catch { return []; }
+}
+function setQueue(q) { localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q)); }
+function enqueue(item) {
+  const q = getQueue();
+  q.push(item);
+  setQueue(q);
+}
+
+// ---------- Sync ----------
+async function syncQueue() {
+  if (!navigator.onLine) return;
+
+  const q = getQueue();
+  if (!q.length) return;
+
+  for (const item of q) {
     try {
-      // Delete caches to force fresh assets
-      if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-    } catch (e) {}
-
-    // Reload
-    window.location.reload();
-  };
-}
-
-function checkAndShowBanner() {
-  const current = getHtmlVersion();
-  if (!current) return;
-
-  const lastSeen = localStorage.getItem(STORAGE_KEY);
-
-  // First run: store only, no banner
-  if (!lastSeen) {
-    localStorage.setItem(STORAGE_KEY, current);
-    return;
+      const res = await fetch(item.url, {
+        method: item.method || "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: item.body,
+        credentials: "same-origin",
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+    } catch (e) {
+      // stop at first failure; keep queue
+      toast("Αποτυχία συγχρονισμού — θα ξαναδοκιμάσει μόλις έχει internet.", false);
+      return;
+    }
   }
 
-  // New version detected -> show banner
-  if (lastSeen !== current) {
-    localStorage.setItem(STORAGE_KEY, current);
-    showUpdateBanner(current);
-  }
+  localStorage.removeItem(OFFLINE_QUEUE_KEY);
+  toast("Offline δεδομένα συγχρονίστηκαν ✅");
 }
 
-// Register SW for offline (but do NOT rely on SW waiting for banner)
+window.addEventListener("online", () => {
+  // give the connection a moment
+  setTimeout(syncQueue, 800);
+});
+window.addEventListener("load", () => {
+  setTimeout(syncQueue, 800);
+});
+
+// ---------- Register Service Worker (ROOT scope) ----------
 async function registerSW() {
   if (!("serviceWorker" in navigator)) return;
   try {
-    // versioned register helps Android pick up newest SW
-    await navigator.serviceWorker.register("/static/sw.js?v=v7");
+    await navigator.serviceWorker.register("/sw.js");
   } catch (e) {}
 }
+registerSW();
 
-window.addEventListener("load", () => {
-  registerSW();
-  checkAndShowBanner();
+// ---------- Intercept visit form submit when offline ----------
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("visit-form");
+  if (!form) return;
+
+  form.addEventListener("submit", (e) => {
+    if (navigator.onLine) return; // online -> normal submit
+
+    e.preventDefault();
+
+    const fd = new FormData(form);
+    const params = new URLSearchParams();
+    for (const [k, v] of fd.entries()) params.append(k, v);
+
+    enqueue({
+      url: form.action,
+      method: (form.method || "POST").toUpperCase(),
+      body: params.toString(),
+      ts: Date.now(),
+    });
+
+    toast("Αποθηκεύτηκε offline 📦");
+  });
 });

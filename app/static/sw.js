@@ -1,22 +1,29 @@
-// Stefanos Garage PWA Service Worker (v7)
-// Στόχος: να παίρνει πάντα νέο HTML όταν έχει internet (network-first)
-// και να κρατάει offline fallback.
+// Stefanos Garage PWA Service Worker (ROOT scope: registered as /sw.js)
+// Offline shell + cache static assets
 
-const CACHE_NAME = "stefanos-garage-v7";
+const CACHE_NAME = "stefanos-garage-offline-shell-v11";
 
-const ASSETS = [
+const OFFLINE_PAGES = [
   "/",
-  "/history",
+  "/visits/new",
   "/checklist",
-  "/static/manifest.webmanifest?v=v7",
+  "/history"
+];
+
+const STATIC_ASSETS = [
+  "/static/manifest.webmanifest",
   "/static/icon-192.png",
-  "/static/icon-512.png"
+  "/static/icon-512.png",
+  "/static/app.js",
+  "/sw.js"
 ];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)).catch(() => {})
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll([...OFFLINE_PAGES, ...STATIC_ASSETS]))
+      .catch(() => {})
   );
 });
 
@@ -28,20 +35,47 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
+function isStatic(url) {
+  return url.pathname.startsWith("/static/") || url.pathname === "/sw.js";
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
-  // Pages: network-first (πάντα νέο HTML όταν υπάρχει internet)
-  if (req.mode === "navigate") {
+  const url = new URL(req.url);
+
+  // Static: cache-first
+  if (isStatic(url)) {
     event.respondWith(
-      fetch(req).catch(async () => (await caches.match(req)) || (await caches.match("/")))
+      caches.match(req).then((cached) => {
+        if (cached) return cached;
+        return fetch(req).then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
+          return res;
+        });
+      })
     );
     return;
   }
 
-  // Static: cache-first
-  event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req))
-  );
+  // Pages: network-first, fallback cache
+  if (req.mode === "navigate") {
+    event.respondWith(
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
+      }).catch(async () => {
+        return (await caches.match(req))
+          || (await caches.match("/visits/new"))
+          || (await caches.match("/"));
+      })
+    );
+    return;
+  }
+
+  // Other GET: cache then network
+  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
