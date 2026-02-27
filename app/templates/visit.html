@@ -40,12 +40,6 @@
         <label class="form-label">Σημείωση</label>
         <input class="form-control" name="notes">
       </div>
-
-      <div class="col-12 mt-2">
-        <div class="alert alert-info mb-0">
-          Πατάς “Δημιουργία Επίσκεψης” και μετά ανοίγει η επίσκεψη με το Checklist.
-        </div>
-      </div>
     </div>
   </div>
 
@@ -78,6 +72,7 @@
 <form id="visit-form" method="post" action="/visits/{{ visit.id }}/save_all" class="no-print">
   <input type="hidden" name="mode" value="{{ mode }}">
 
+  <!-- Customer box -->
   <div class="card shadow-sm mb-3">
     <div class="card-header fw-semibold">Στοιχεία Πελάτη & Οχήματος</div>
     <div class="card-body">
@@ -148,9 +143,10 @@
   <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
     <button type="button" class="btn btn-outline-secondary btn-sm" id="open-all">Άνοιγμα όλων</button>
     <button type="button" class="btn btn-outline-secondary btn-sm" id="close-all">Κλείσιμο όλων</button>
-    <span class="small-muted ms-2">Οι κατηγορίες είναι σε αλφαβητική σειρά, με αρίθμηση 1..N.</span>
+    <span class="small-muted ms-2">Αλφαβητική σειρά + αρίθμηση 1..N</span>
   </div>
 
+  <!-- ✅ SINGLE (ONLY ONE) checklist accordion -->
   <div class="card shadow-sm">
     <div class="card-header d-flex align-items-center justify-content-between">
       <div class="fw-semibold">Checklist</div>
@@ -160,21 +156,17 @@
     <div class="card-body p-0">
       <div class="accordion" id="acc-checklist">
 
-        {# ✅ Βήμα 1: Βρίσκουμε όλες τις κατηγορίες από τις γραμμές #}
+        {# categories from ALL lines, unique + sort #}
         {% set cats = [] %}
         {% for ln in all_lines %}
           {% if ln.category and (ln.category not in cats) %}
             {% set _ = cats.append(ln.category) %}
           {% endif %}
         {% endfor %}
-
-        {# ✅ Βήμα 2: Ταξινομούμε αλφαβητικά #}
         {% set cats = cats|sort %}
 
-        {# ✅ Βήμα 3: Για κάθε κατηγορία, δείχνουμε τις γραμμές της #}
         {% for cat in cats %}
           {% set idx = loop.index %}
-
           <div class="accordion-item">
             <h2 class="accordion-header" id="h{{ idx }}">
               <button class="accordion-button collapsed" type="button"
@@ -198,14 +190,12 @@
                     </tr>
                   </thead>
                   <tbody>
-
                     {% for ln in lines %}
                       {% if ln.category == cat %}
                         {% set rid = ln.id|string %}
                         {% set memkey = (ln.category or '', ln.item_name or '') %}
                         <tr>
                           <td class="fw-semibold">{{ ln.item_name or '' }}</td>
-
                           <td>
                             <select class="form-select form-select-sm" name="result_{{ rid }}">
                               {% for opt in ['OK','CHECK','REPAIR'] %}
@@ -213,24 +203,22 @@
                               {% endfor %}
                             </select>
                           </td>
-
                           <td>
                             <input class="form-control form-control-sm mono"
                                    name="parts_code_{{ rid }}"
                                    value="{{ ln.parts_code or (mem.get(memkey,'') if mem is defined else '') }}"
                                    placeholder="Code">
                           </td>
-
                           <td>
-                            <input class="form-control form-control-sm mono" name="parts_qty_{{ rid }}"
+                            <input class="form-control form-control-sm mono"
+                                   name="parts_qty_{{ rid }}"
                                    value="{{ ln.parts_qty or 0 }}" style="max-width:90px">
                           </td>
-
                           <td>
-                            <input class="form-control form-control-sm" name="notes_{{ rid }}"
+                            <input class="form-control form-control-sm"
+                                   name="notes_{{ rid }}"
                                    value="{{ ln.notes or '' }}" placeholder="Σημείωση">
                           </td>
-
                           <td class="text-center">
                             <input class="form-check-input" type="checkbox" name="exclude_{{ rid }}"
                                    {% if ln.exclude_from_print %}checked{% endif %}>
@@ -238,14 +226,13 @@
                         </tr>
                       {% endif %}
                     {% endfor %}
-
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
-
         {% endfor %}
+
       </div>
     </div>
   </div>
@@ -256,40 +243,35 @@
   </div>
 </form>
 
+<!-- Add new category/item -->
 <div class="card mt-3 no-print">
   <div class="card-header fw-semibold">Προσθήκη νέας κατηγορίας / εργασίας</div>
   <div class="card-body">
     <form id="add-line-form" method="post" action="/visits/{{ visit.id }}/add_line" class="row g-2 align-items-end">
-  <div class="col-md-4">
-    <label class="form-label">Κατηγορία</label>
-    <input class="form-control" name="new_category" placeholder="π.χ. ΦΡΕΝΑ" required>
-  </div>
-
-  <div class="col-md-4">
-    <label class="form-label">Εργασία</label>
-    <input class="form-control" name="new_item" placeholder="π.χ. Αλλαγή τακάκια" required>
-  </div>
-
-  <div class="col-md-2">
-    <div class="form-check mt-4">
-      <input class="form-check-input" type="checkbox" id="make_permanent" name="make_permanent">
-      <label class="form-check-label" for="make_permanent">
-        Μόνιμη
-      </label>
-    </div>
-  </div>
-
-  <div class="col-md-2">
-    <button class="btn btn-outline-primary w-100">Προσθήκη</button>
-  </div>
-</form>
-    <div class="small-muted mt-2">Η σειρά είναι αλφαβητική. Ο αριθμός δείχνει πόσες κατηγορίες υπάρχουν.</div>
+      <div class="col-md-4">
+        <label class="form-label">Κατηγορία</label>
+        <input class="form-control" name="new_category" placeholder="π.χ. ΦΡΕΝΑ" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Εργασία</label>
+        <input class="form-control" name="new_item" placeholder="π.χ. Αλλαγή τακάκια" required>
+      </div>
+      <div class="col-md-2">
+        <div class="form-check mt-4">
+          <input class="form-check-input" type="checkbox" id="make_permanent" name="make_permanent">
+          <label class="form-check-label" for="make_permanent">Μόνιμη</label>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-outline-primary w-100">Προσθήκη</button>
+      </div>
+    </form>
+    <div class="small-muted mt-2">Αλφαβητική σειρά. Ο αριθμός δείχνει πόσες κατηγορίες υπάρχουν.</div>
   </div>
 </div>
 
 <script>
 (function () {
-  // Auto-fill Date/Time In from device if empty
   function pad(n){ return String(n).padStart(2,'0'); }
   const di = document.getElementById("date_in");
   const ti = document.getElementById("time_in");
@@ -299,7 +281,6 @@
     ti.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   }
 
-  // Open/Close all
   function allCollapses() {
     return Array.from(document.querySelectorAll(".accordion-collapse"));
   }
@@ -310,14 +291,13 @@
     allCollapses().forEach(el => bootstrap.Collapse.getOrCreateInstance(el, {toggle:false}).hide());
   });
 
-  // category count
+  // category count based on cats length (accordion items)
   const catCount = document.getElementById("cat-count");
   if (catCount) {
-    const headers = document.querySelectorAll(".accordion-header");
-    catCount.textContent = String(headers.length);
+    catCount.textContent = String(document.querySelectorAll("#acc-checklist .accordion-item").length);
   }
 
-  // Draft autosave
+  // Draft autosave (so add_line doesn't wipe selections)
   const visitId = "{{ visit.id }}";
   const key = `visit-draft-${visitId}`;
   const form = document.getElementById("visit-form");
