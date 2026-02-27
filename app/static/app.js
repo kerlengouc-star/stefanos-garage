@@ -1,111 +1,90 @@
-// ===============================
-// Stefanos Garage Offline System
-// ===============================
+// Stefanos Garage Offline Queue + Sync + Toasts
+// Uses ROOT service worker at /sw.js so pages work offline.
 
-const OFFLINE_QUEUE_KEY = "garage-offline-queue";
+const OFFLINE_QUEUE_KEY = "garage_offline_queue_v1";
 
-// --------------------------------
-// Service Worker registration
-// --------------------------------
-async function registerSW() {
-  if (!("serviceWorker" in navigator)) return;
-
-  try {
-    await navigator.serviceWorker.register("/static/sw.js");
-  } catch (e) {}
+// ---------- Toast ----------
+function toast(msg) {
+  const el = document.createElement("div");
+  el.style.cssText =
+    "position:fixed;bottom:20px;left:20px;right:20px;z-index:999999;" +
+    "background:#198754;color:#fff;padding:12px 14px;border-radius:12px;" +
+    "box-shadow:0 10px 30px rgba(0,0,0,.2);font-size:14px;";
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
 }
 
-registerSW();
-
-// --------------------------------
-// Offline Queue Logic
-// --------------------------------
+// ---------- Queue storage ----------
 function getQueue() {
-  try {
-    return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY)) || [];
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY)) || []; }
+  catch { return []; }
+}
+function setQueue(q) { localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q)); }
+function enqueue(item) {
+  const q = getQueue();
+  q.push(item);
+  setQueue(q);
 }
 
-function saveQueue(queue) {
-  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-}
-
-function addToQueue(payload) {
-  const queue = getQueue();
-  queue.push(payload);
-  saveQueue(queue);
-}
-
+// ---------- Sync ----------
 async function syncQueue() {
   if (!navigator.onLine) return;
 
-  const queue = getQueue();
-  if (!queue.length) return;
+  const q = getQueue();
+  if (!q.length) return;
 
-  for (const item of queue) {
+  for (const item of q) {
     try {
       await fetch(item.url, {
-        method: item.method,
+        method: item.method || "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: item.body,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+        credentials: "same-origin",
       });
     } catch (e) {
-      return; // αν αποτύχει, σταματά
+      // stop at first failure; keep queue
+      return;
     }
   }
 
   localStorage.removeItem(OFFLINE_QUEUE_KEY);
-  showToast("Offline δεδομένα συγχρονίστηκαν ✅");
+  toast("Offline δεδομένα συγχρονίστηκαν ✅");
 }
 
 window.addEventListener("online", syncQueue);
 window.addEventListener("load", syncQueue);
 
-// --------------------------------
-// Toast message
-// --------------------------------
-function showToast(msg) {
-  const el = document.createElement("div");
-  el.style.position = "fixed";
-  el.style.bottom = "20px";
-  el.style.left = "20px";
-  el.style.background = "#198754";
-  el.style.color = "#fff";
-  el.style.padding = "10px 14px";
-  el.style.borderRadius = "10px";
-  el.style.zIndex = "9999";
-  el.innerText = msg;
-  document.body.appendChild(el);
-
-  setTimeout(() => el.remove(), 3000);
+// ---------- Register Service Worker (ROOT scope) ----------
+async function registerSW() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    await navigator.serviceWorker.register("/sw.js");
+  } catch (e) {}
 }
+registerSW();
 
-// --------------------------------
-// Intercept visit form submit
-// --------------------------------
+// ---------- Intercept visit form submit when offline ----------
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("visit-form");
   if (!form) return;
 
-  form.addEventListener("submit", async (e) => {
-    if (navigator.onLine) return;
+  form.addEventListener("submit", (e) => {
+    if (navigator.onLine) return; // online -> normal submit
 
     e.preventDefault();
 
-    const formData = new FormData(form);
+    const fd = new FormData(form);
     const params = new URLSearchParams();
-    for (const pair of formData.entries()) {
-      params.append(pair[0], pair[1]);
-    }
+    for (const [k, v] of fd.entries()) params.append(k, v);
 
-    addToQueue({
+    enqueue({
       url: form.action,
       method: form.method || "POST",
-      body: params.toString()
+      body: params.toString(),
+      ts: Date.now(),
     });
 
-    showToast("Αποθηκεύτηκε offline 📦");
+    toast("Αποθηκεύτηκε offline 📦");
   });
 });
