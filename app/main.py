@@ -19,10 +19,9 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal, engine, Base
 from .models import Visit, ChecklistItem, PartMemory
 
-# Keep ORIGINAL utils names used in your project
-from .email_utils import send_email_with_pdf
-from .pdf_utils import render_visit_pdf
-
+# Import MODULES (not functions) to avoid ImportError on Render
+from . import pdf_utils
+from . import email_utils
 
 Base.metadata.create_all(bind=engine)
 
@@ -45,7 +44,6 @@ def sw_root():
         headers={"Service-Worker-Allowed": "/"},
     )
 
-
 # ---------------- DB ----------------
 def get_db():
     db = SessionLocal()
@@ -53,7 +51,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
 
 # ---------------- Diagnostics ----------------
 @app.get("/__ping")
@@ -92,7 +89,6 @@ def __dbinfo(db: Session = Depends(get_db)):
 def __tables():
     return {"ok": True}
 
-
 # ---------------- Helpers ----------------
 def group_checklist(db: Session) -> Dict[str, List[ChecklistItem]]:
     items = db.query(ChecklistItem).order_by(ChecklistItem.category.asc(), ChecklistItem.name.asc()).all()
@@ -101,13 +97,52 @@ def group_checklist(db: Session) -> Dict[str, List[ChecklistItem]]:
         categories.setdefault(it.category, []).append(it)
     return categories
 
+def _pdf_bytes_for_visit(v: Visit, db: Session) -> bytes:
+    """
+    Try multiple possible function names in pdf_utils.
+    This avoids breaking deploys if the function name differs.
+    """
+    candidates = [
+        "render_visit_pdf",
+        "generate_visit_pdf_bytes",
+        "generate_pdf_bytes",
+        "make_visit_pdf",
+        "build_visit_pdf",
+        "create_visit_pdf",
+    ]
+    for name in candidates:
+        fn = getattr(pdf_utils, name, None)
+        if callable(fn):
+            out = fn(v, db)
+            # Some implementations return bytes, others return file-like
+            if isinstance(out, (bytes, bytearray)):
+                return bytes(out)
+            # If returns a StreamingResponse-like or buffer, try to read
+            if hasattr(out, "read"):
+                return out.read()
+    raise RuntimeError("No compatible PDF function found in app/pdf_utils.py")
+
+def _send_email_for_visit(v: Visit, db: Session):
+    """
+    Try multiple possible function names in email_utils.
+    """
+    candidates = [
+        "send_email_with_pdf",
+        "send_visit_email",
+        "send_email",
+        "email_visit_pdf",
+    ]
+    for name in candidates:
+        fn = getattr(email_utils, name, None)
+        if callable(fn):
+            return fn(v, db)
+    raise RuntimeError("No compatible Email function found in app/email_utils.py")
 
 # ---------------- Pages ----------------
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, q: str = "", db: Session = Depends(get_db)):
     visits = db.query(Visit).order_by(Visit.id.desc()).limit(50).all()
     return templates.TemplateResponse("index.html", {"request": request, "visits": visits, "q": q})
-
 
 @app.get("/visits/new", response_class=HTMLResponse)
 def visit_new_page(request: Request, db: Session = Depends(get_db)):
@@ -116,7 +151,6 @@ def visit_new_page(request: Request, db: Session = Depends(get_db)):
         "visit.html",
         {"request": request, "visit": None, "categories": categories, "selected_ids": set(), "mode": "all"},
     )
-
 
 @app.post("/visits/new")
 def visit_new(
@@ -144,7 +178,6 @@ def visit_new(
     db.refresh(v)
     return RedirectResponse(url=f"/visits/{v.id}", status_code=303)
 
-
 @app.get("/visits/{visit_id}", response_class=HTMLResponse)
 def visit_view(request: Request, visit_id: int, mode: str = "all", db: Session = Depends(get_db)):
     v = db.query(Visit).filter(Visit.id == visit_id).first()
@@ -157,7 +190,6 @@ def visit_view(request: Request, visit_id: int, mode: str = "all", db: Session =
         "visit.html",
         {"request": request, "visit": v, "categories": categories, "selected_ids": selected_ids, "mode": mode},
     )
-
 
 @app.post("/visits/{visit_id}/save_all")
 def visit_save_all(
@@ -188,7 +220,6 @@ def visit_save_all(
 
     return RedirectResponse(url=f"/visits/{visit_id}?mode=selected", status_code=303)
 
-
 @app.get("/visits/{visit_id}/print", response_class=HTMLResponse)
 def visit_print(request: Request, visit_id: int, db: Session = Depends(get_db)):
     v = db.query(Visit).filter(Visit.id == visit_id).first()
@@ -197,16 +228,17 @@ def visit_print(request: Request, visit_id: int, db: Session = Depends(get_db)):
     categories = group_checklist(db)
     return templates.TemplateResponse("print.html", {"request": request, "visit": v, "categories": categories})
 
-
 @app.get("/visits/{visit_id}/pdf")
 def visit_pdf(visit_id: int, db: Session = Depends(get_db)):
     v = db.query(Visit).filter(Visit.id == visit_id).first()
     if not v:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
 
-    pdf_bytes = render_visit_pdf(v, db)
-    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf")
-
+    try:
+        pdf_bytes = _pdf_bytes_for_visit(v, db)
+        return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf")
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 @app.post("/visits/{visit_id}/email")
 def visit_email(visit_id: int, db: Session = Depends(get_db)):
@@ -214,15 +246,16 @@ def visit_email(visit_id: int, db: Session = Depends(get_db)):
     if not v:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
 
-    ok, message = send_email_with_pdf(v, db)
-    return JSONResponse({"ok": ok, "message": message})
-
+    try:
+        ok, message = _send_email_for_visit(v, db)
+        return JSONResponse({"ok": ok, "message": message})
+    except Exception as e:
+        return JSONResponse({"ok": False, "message": str(e)}, status_code=500)
 
 @app.get("/checklist", response_class=HTMLResponse)
 def checklist_admin(request: Request, db: Session = Depends(get_db)):
     categories = group_checklist(db)
     return templates.TemplateResponse("checklist.html", {"request": request, "categories": categories})
-
 
 @app.post("/checklist/add")
 def checklist_add(category: str = Form(...), name: str = Form(...), db: Session = Depends(get_db)):
@@ -230,7 +263,6 @@ def checklist_add(category: str = Form(...), name: str = Form(...), db: Session 
     db.add(it)
     db.commit()
     return RedirectResponse(url="/checklist", status_code=303)
-
 
 @app.post("/checklist/delete/{item_id}")
 def checklist_delete(item_id: int, db: Session = Depends(get_db)):
@@ -240,12 +272,10 @@ def checklist_delete(item_id: int, db: Session = Depends(get_db)):
         db.commit()
     return RedirectResponse(url="/checklist", status_code=303)
 
-
 @app.get("/search", response_class=HTMLResponse)
 def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
     visits = db.query(Visit).order_by(Visit.id.desc()).limit(100).all()
     return templates.TemplateResponse("search.html", {"request": request, "visits": visits, "q": q})
-
 
 @app.get("/history", response_class=HTMLResponse)
 def history_page(request: Request, from_date: str = "", to_date: str = "", q: str = "", db: Session = Depends(get_db)):
@@ -254,7 +284,6 @@ def history_page(request: Request, from_date: str = "", to_date: str = "", q: st
         "history.html",
         {"request": request, "visits": visits, "from_date": from_date, "to_date": to_date, "q": q},
     )
-
 
 @app.get("/backup")
 def backup_export(db: Session = Depends(get_db)):
@@ -266,12 +295,10 @@ def backup_export(db: Session = Depends(get_db)):
     }
     return JSONResponse(data)
 
-
 @app.post("/backup/import")
 def backup_import(file: UploadFile = File(...), db: Session = Depends(get_db)):
     _ = file.file.read()
     return JSONResponse({"ok": True})
-
 
 @app.post("/reset")
 def reset_tests(db: Session = Depends(get_db)):
