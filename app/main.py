@@ -416,12 +416,14 @@ def visit_view(visit_id: int, request: Request, db: Session = Depends(get_db), m
 
 
 @app.post("/visits/{visit_id}/save_all")
+@app.post("/visits/{visit_id}/save_all")
 async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(get_db)):
     visit = db.query(Visit).filter(Visit.id == visit_id).first()
     if not visit:
         return RedirectResponse("/", status_code=302)
 
     form = await request.form()
+    mode = (form.get("mode") or "all").strip()
 
     visit.plate_number = (form.get("plate_number") or "").strip() or None
     visit.vin = (form.get("vin") or "").strip() or None
@@ -461,7 +463,6 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
 
         ln.exclude_from_print = (form.get(f"exclude_{rid}") == "on")
 
-        # remember parts code per model/category/item
         if mk and ln.parts_code:
             existing = (
                 db.query(PartMemory)
@@ -486,9 +487,8 @@ async def visit_save_all(visit_id: int, request: Request, db: Session = Depends(
                 )
 
     db.commit()
-    return RedirectResponse(f"/visits/{visit_id}?mode=all&saved=1", status_code=302)
-
-
+    return RedirectResponse(f"/visits/{visit_id}?mode={mode}&saved=1", status_code=302)
+    
 # =========================
 # PDF / PRINT / EMAIL
 # =========================
