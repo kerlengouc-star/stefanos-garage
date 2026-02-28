@@ -1,7 +1,10 @@
-// Stefanos Garage OFFLINE PHASE 1 (fix /visits/new offline for all variants)
-const CACHE_VERSION = "offline-v10";
+// Stefanos Garage - Offline Phase B (Queue + Sync support)
+// - Provides offline HTML for /visits/new (form saves locally via app.js when offline)
+// - Provides generic offline fallback with navigation links
+// - Caches essential static files
+
+const CACHE_VERSION = "phaseB-v1";
 const SW_CACHE = `sg-sw-${CACHE_VERSION}`;
-const PAGES_CACHE = "sg-pages-v2";
 
 const PRECACHE = [
   "/static/app.js",
@@ -17,93 +20,71 @@ const OFFLINE_NEW_VISIT_HTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Νέα Επίσκεψη (Offline)</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 16px; background:#f5f6f8; }
-    .card { background:#fff; border-radius:14px; padding:16px; box-shadow:0 6px 24px rgba(0,0,0,.08); }
-    label { display:block; font-size:12px; color:#6b7280; margin-top:10px; }
-    input, textarea { width:100%; padding:10px; border:1px solid #e5e7eb; border-radius:10px; font-size:14px; background:#fff; }
-    .row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-    .btns { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
-    button, a { appearance:none; border:0; padding:10px 12px; border-radius:10px; font-size:14px; cursor:pointer; text-decoration:none; }
-    .btn { background:#111827; color:#fff; }
-    .btn2 { background:#e5e7eb; color:#111827; }
-    .note { margin-top:10px; font-size:12px; color:#6b7280; }
-    @media (max-width: 600px){ .row{ grid-template-columns: 1fr; } }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding:16px; background:#f5f6f8; }
+    .card { background:#fff;border-radius:14px;padding:16px;box-shadow:0 6px 24px rgba(0,0,0,.08); }
+    label { display:block;font-size:12px;color:#6b7280;margin-top:10px; }
+    input, textarea { width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;background:#fff; }
+    .row { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+    .btns { display:flex;gap:10px;flex-wrap:wrap;margin-top:14px; }
+    button,a { appearance:none;border:0;padding:10px 12px;border-radius:10px;font-size:14px;cursor:pointer;text-decoration:none; }
+    .btn { background:#111827;color:#fff; }
+    .btn2 { background:#e5e7eb;color:#111827; }
+    .note { margin-top:10px;font-size:12px;color:#6b7280; }
+    @media (max-width:600px){ .row{ grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
   <div class="card">
     <h3 style="margin:0 0 6px 0;">Νέα Επίσκεψη (Offline)</h3>
     <div style="color:#dc2626;font-size:13px;margin-bottom:10px;">
-      Είσαι offline. Μπορείς να γράψεις στοιχεία, αλλά δεν γίνεται αποθήκευση στη βάση ακόμα.
+      Είσαι offline. Η καταχώρηση θα αποθηκευτεί τοπικά και θα ανέβει όταν επανέλθει το internet.
     </div>
 
-    <div class="row">
-      <div>
-        <label>Όνομα Πελάτη</label>
-        <input id="customer_name" placeholder="π.χ. Ανδρέας">
-      </div>
-      <div>
-        <label>Τηλέφωνο</label>
-        <input id="phone" placeholder="π.χ. 99xxxxxx">
-      </div>
-      <div>
-        <label>Email</label>
-        <input id="email" placeholder="π.χ. test@email.com">
-      </div>
-      <div>
-        <label>Πινακίδα</label>
-        <input id="plate_number" placeholder="π.χ. KAA123">
-      </div>
-      <div>
-        <label>Μοντέλο</label>
-        <input id="model" placeholder="π.χ. Toyota">
-      </div>
-      <div>
-        <label>VIN</label>
-        <input id="vin" placeholder="π.χ. ...">
-      </div>
-    </div>
+    <div class="note">Ημερομηνία/Ώρα συσκευής: <b id="sg-device-time">—</b></div>
 
-    <label>Σημειώσεις</label>
-    <textarea id="notes" rows="3" placeholder="τι θέλει ο πελάτης..."></textarea>
+    <form id="sg-offline-new-visit-form">
+      <div class="row">
+        <div>
+          <label>Όνομα Πελάτη</label>
+          <input id="customer_name" placeholder="π.χ. Ανδρέας">
+        </div>
+        <div>
+          <label>Τηλέφωνο</label>
+          <input id="phone" placeholder="π.χ. 99xxxxxx">
+        </div>
+        <div>
+          <label>Email</label>
+          <input id="email" placeholder="π.χ. test@email.com">
+        </div>
+        <div>
+          <label>Πινακίδα</label>
+          <input id="plate_number" placeholder="π.χ. KAA123">
+        </div>
+        <div>
+          <label>Μοντέλο</label>
+          <input id="model" placeholder="π.χ. Toyota">
+        </div>
+        <div>
+          <label>VIN</label>
+          <input id="vin" placeholder="π.χ. ...">
+        </div>
+      </div>
 
-    <div class="btns">
-      <button class="btn" id="save_draft">Αποθήκευση Προσωρινά</button>
-      <button class="btn2" id="clear_draft">Καθαρισμός</button>
-      <a class="btn2" href="/">Αρχική</a>
-      <a class="btn2" href="/history">Ιστορικό</a>
-      <a class="btn2" href="/checklist">Checklist</a>
-    </div>
+      <label>Σημειώσεις</label>
+      <textarea id="notes" rows="3" placeholder="τι θέλει ο πελάτης..."></textarea>
 
-    <div class="note">Στη Φάση 2 θα γίνει Sync (offline καταχώρηση + αυτόματο ανέβασμα).</div>
+      <div class="btns">
+        <button class="btn" type="submit">Αποθήκευση Offline</button>
+        <a class="btn2" href="/">Αρχική</a>
+        <a class="btn2" href="/history">Ιστορικό</a>
+        <a class="btn2" href="/checklist">Checklist</a>
+      </div>
+    </form>
+
+    <div class="note">Όταν επανέλθει internet: θα εμφανιστεί πράσινο banner και “Συγχρονισμός τώρα”.</div>
   </div>
 
   <script src="/static/app.js"></script>
-  <script>
-    const KEY = "offline_new_visit_draft_v2";
-    const ids = ["customer_name","phone","email","plate_number","model","vin","notes"];
-
-    function loadDraft(){
-      try{
-        const d = JSON.parse(localStorage.getItem(KEY) || "{}");
-        ids.forEach(id => { if(d[id] !== undefined) document.getElementById(id).value = d[id]; });
-      }catch(e){}
-    }
-    function saveDraft(){
-      const d = {};
-      ids.forEach(id => d[id] = document.getElementById(id).value || "");
-      localStorage.setItem(KEY, JSON.stringify(d));
-      alert("Αποθηκεύτηκε προσωρινά (offline draft).");
-    }
-    function clearDraft(){
-      localStorage.removeItem(KEY);
-      ids.forEach(id => document.getElementById(id).value = "");
-    }
-
-    document.getElementById("save_draft").onclick = saveDraft;
-    document.getElementById("clear_draft").onclick = clearDraft;
-    loadDraft();
-  </script>
 </body>
 </html>`;
 
@@ -114,15 +95,15 @@ const OFFLINE_FALLBACK_HTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Offline</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 16px; background:#f5f6f8; }
-    .card { background:#fff; border-radius:14px; padding:16px; box-shadow:0 6px 24px rgba(0,0,0,.08); }
-    a { display:inline-block; margin-right:10px; margin-top:10px; padding:10px 12px; border-radius:10px; background:#e5e7eb; color:#111827; text-decoration:none; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding:16px; background:#f5f6f8; }
+    .card { background:#fff;border-radius:14px;padding:16px;box-shadow:0 6px 24px rgba(0,0,0,.08); }
+    a { display:inline-block;margin-right:10px;margin-top:10px;padding:10px 12px;border-radius:10px;background:#e5e7eb;color:#111827;text-decoration:none; }
   </style>
 </head>
 <body>
   <div class="card">
     <h3 style="margin:0 0 6px 0;">Offline mode</h3>
-    <div style="color:#6b7280;">Δεν υπάρχει σύνδεση.</div>
+    <div style="color:#6b7280;">Δεν υπάρχει σύνδεση. Μπορείς να ανοίξεις βασικές σελίδες και να κάνεις Offline Νέα Επίσκεψη.</div>
     <div>
       <a href="/">Αρχική</a>
       <a href="/history">Ιστορικό</a>
@@ -145,19 +126,10 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.map((k) => (k !== SW_CACHE && k !== PAGES_CACHE ? caches.delete(k) : Promise.resolve())));
+    await Promise.all(keys.map((k) => (k !== SW_CACHE ? caches.delete(k) : Promise.resolve())));
     await self.clients.claim();
   })());
 });
-
-async function matchFromPagesCache(pathname) {
-  try {
-    const cache = await caches.open(PAGES_CACHE);
-    return (await cache.match(pathname, { ignoreSearch: true })) || null;
-  } catch {
-    return null;
-  }
-}
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
@@ -171,17 +143,14 @@ self.addEventListener("fetch", (event) => {
       try {
         return await fetch(req);
       } catch (e) {
-        // ✅ ΠΙΑΝΕΙ /visits/new, /visits/new/, /visits/new?...
+        // OFFLINE new visit
         if (url.pathname.startsWith("/visits/new")) {
           return new Response(OFFLINE_NEW_VISIT_HTML, {
             status: 200,
             headers: { "Content-Type": "text/html; charset=utf-8" }
           });
         }
-
-        const cached = await matchFromPagesCache(url.pathname);
-        if (cached) return cached;
-
+        // generic offline fallback
         return new Response(OFFLINE_FALLBACK_HTML, {
           status: 200,
           headers: { "Content-Type": "text/html; charset=utf-8" }
@@ -191,7 +160,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets
+  // Static cache-first
   event.respondWith((async () => {
     const cache = await caches.open(SW_CACHE);
     const cached = await cache.match(req, { ignoreSearch: true });
