@@ -43,19 +43,19 @@ COMPANY = {
 
 
 # =========================
-# APP (IMPORTANT: app must be defined BEFORE any @app.route)
+# APP
 # =========================
 app = FastAPI()
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # .../app
-STATIC_DIR = os.path.join(BASE_DIR, "static")          # .../app/static
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 templates = Jinja2Templates(directory="app/templates")
 
 
-# Serve service worker at ROOT scope (so it controls all pages)
+# Serve SW at root scope
 @app.get("/sw.js")
 def sw_root():
     return FileResponse(
@@ -272,6 +272,7 @@ def visit_new_page(request: Request):
     return templates.TemplateResponse("visit.html", {"request": request, "visit": None})
 
 
+# ✅ ΒΗΜΑ 4: ΠΑΝΤΑ date_in = ΤΩΡΑ
 @app.post("/visits/new")
 def visit_new(
     customer_name: str = Form(""),
@@ -283,6 +284,8 @@ def visit_new(
     notes: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    now = dt.datetime.now()
+
     v = Visit(
         customer_name=(customer_name or "").strip() or None,
         phone=(phone or "").strip() or None,
@@ -290,7 +293,7 @@ def visit_new(
         plate_number=(plate_number or "").strip() or None,
         model=(model or "").strip() or None,
         vin=(vin or "").strip() or None,
-        date_in=None,
+        date_in=now,  # ✅ εδώ
     )
     if hasattr(v, "notes_general"):
         v.notes_general = (notes or "").strip() or None
@@ -318,13 +321,12 @@ def visit_new(
     return RedirectResponse(f"/visits/{v.id}", status_code=302)
 
 
-# ✅ ADD LINE WITH "PERMANENT" CHECKBOX
 @app.post("/visits/{visit_id}/add_line")
 def visit_add_line(
     visit_id: int,
     new_category: str = Form(""),
     new_item: str = Form(""),
-    make_permanent: str = Form(""),  # "on" if checked
+    make_permanent: str = Form(""),
     db: Session = Depends(get_db),
 ):
     new_category = (new_category or "").strip()
@@ -338,7 +340,6 @@ def visit_add_line(
     if not visit:
         return RedirectResponse("/", status_code=302)
 
-    # If permanent -> add to master checklist
     if is_permanent:
         exists = (
             db.query(ChecklistItem)
@@ -349,7 +350,6 @@ def visit_add_line(
             db.add(ChecklistItem(category=new_category, name=new_item))
             db.commit()
 
-    # Always add to this visit if missing
     line_exists = (
         db.query(VisitChecklistLine)
         .filter(
