@@ -1,11 +1,11 @@
-const CACHE_VERSION = "offline-v6";
-const CACHE_NAME = `stefanos-garage-${CACHE_VERSION}`;
+// Stefanos Garage OFFLINE PHASE 1 (serve cached pages when offline)
+const CACHE_VERSION = "offline-v7";
+const SW_CACHE = `sg-sw-${CACHE_VERSION}`;
+
+// αυτός είναι ο cache που γεμίζει από το app.js
+const PAGES_CACHE = "sg-pages-v1";
 
 const PRECACHE = [
-  "/",
-  "/history",
-  "/checklist",
-  "/visits/new",
   "/static/app.js",
   "/static/manifest.webmanifest",
   "/static/icon-192.png",
@@ -28,37 +28,26 @@ const OFFLINE_HTML = `<!doctype html>
   <div class="container-fluid">
     <div class="page">
       <h4 class="mb-2">Offline mode</h4>
-      <div class="text-muted mb-3">Δεν υπάρχει σύνδεση στο internet.</div>
-
-      <div class="d-flex gap-2 flex-wrap">
-        <button class="btn btn-outline-secondary btn-sm" data-go="/">Αρχική</button>
-        <button class="btn btn-outline-secondary btn-sm" data-go="/history">Ιστορικό</button>
-        <button class="btn btn-outline-secondary btn-sm" data-go="/checklist">Checklist</button>
-        <button class="btn btn-outline-secondary btn-sm" data-go="/visits/new">Νέα Επίσκεψη (φόρμα)</button>
+      <div class="text-muted mb-3">
+        Δεν υπάρχει σύνδεση. Αν έχεις ανοίξει τις σελίδες online έστω 1 φορά, θα ανοίγουν και offline.
       </div>
 
-      <div class="mt-3 small text-muted">
-        Σημείωση: Offline καταχώρηση στη βάση θα γίνει στη Φάση 2 (sync).
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-secondary btn-sm" href="/">Αρχική</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/history">Ιστορικό</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/checklist">Checklist</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/visits/new">Νέα Επίσκεψη (φόρμα)</a>
       </div>
     </div>
   </div>
 
   <script src="/static/app.js"></script>
-  <script>
-    // offline navigation helper
-    document.addEventListener("click", function(e){
-      const btn = e.target.closest("[data-go]");
-      if(!btn) return;
-      const path = btn.getAttribute("data-go");
-      if(path) location.href = path;
-    });
-  </script>
 </body>
 </html>`;
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
-    const cache = await caches.open(CACHE_NAME);
+    const cache = await caches.open(SW_CACHE);
     await cache.addAll(PRECACHE);
     self.skipWaiting();
   })().catch(() => {}));
@@ -67,65 +56,59 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())));
+    await Promise.all(keys.map((k) => (k !== SW_CACHE && k !== PAGES_CACHE ? caches.delete(k) : Promise.resolve())));
     await self.clients.claim();
   })());
 });
 
-async function cachedOrOffline(req) {
-  const url = new URL(req.url);
-  const cached =
-    (await caches.match(req, { ignoreSearch: true })) ||
-    (await caches.match(url.pathname, { ignoreSearch: true })) ||
-    (await caches.match("/", { ignoreSearch: true })) ||
-    (await caches.match("/"));
-
-  if (cached) return cached;
-
-  return new Response(OFFLINE_HTML, {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-    status: 200
-  });
+async function matchFromPagesCache(pathname) {
+  try {
+    const cache = await caches.open(PAGES_CACHE);
+    const hit = await cache.match(pathname, { ignoreSearch: true });
+    return hit || null;
+  } catch {
+    return null;
+  }
 }
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
-  // Pages
+  const url = new URL(req.url);
+
+  // HTML pages
   if (req.mode === "navigate") {
     event.respondWith((async () => {
       try {
-        // online -> fresh
-        const res = await fetch(req);
-        // cache latest html too (best-effort)
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
-        return res;
+        return await fetch(req);
       } catch (e) {
-        // offline -> cached or offline html
-        return await cachedOrOffline(req);
+        // OFFLINE: πρώτα προσπάθησε cached snapshot από PAGES_CACHE
+        const cached = await matchFromPagesCache(url.pathname);
+        if (cached) return cached;
+
+        // μετά fallback στην offline page
+        return new Response(OFFLINE_HTML, {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" }
+        });
       }
     })());
     return;
   }
 
-  // Static assets
+  // Static assets: cache-first (SW cache)
   event.respondWith((async () => {
-    const url = new URL(req.url);
-    const cached =
-      (await caches.match(req, { ignoreSearch: true })) ||
-      (await caches.match(url.pathname, { ignoreSearch: true }));
-
+    const cache = await caches.open(SW_CACHE);
+    const cached = await cache.match(req, { ignoreSearch: true });
     if (cached) return cached;
 
     try {
       const fresh = await fetch(req);
-      const copy = fresh.clone();
-      caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
+      cache.put(req, fresh.clone()).catch(() => {});
       return fresh;
-    } catch (e) {
-      return new Response("", { status: 504 });
+    } catch {
+      return cached || new Response("", { status: 504 });
     }
   })());
 });
