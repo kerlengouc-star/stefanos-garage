@@ -1,13 +1,10 @@
-// Stefanos Garage OFFLINE PHASE 1
-// Αν θες να "αναγκάσεις" update test: άλλαξε offline-v2 -> offline-v3 κλπ
-const CACHE_VERSION = "offline-v2";
+const CACHE_VERSION = "offline-v3";
 const CACHE_NAME = `stefanos-garage-${CACHE_VERSION}`;
 
 const PRECACHE = [
   "/",
   "/history",
   "/checklist",
-  "/visits/new",
   "/static/app.js",
   "/static/manifest.webmanifest",
   "/static/icon-192.png",
@@ -28,19 +25,17 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-// HTML = network-first, fallback σε cached ίδιας σελίδας, αλλιώς fallback στο "/"
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
+  // ΠΟΛΥ ΣΗΜΑΝΤΙΚΟ: HTML πάντα network-first, για να μη "κολλάει" παλιά χαλασμένη σελίδα
   if (req.mode === "navigate") {
     event.respondWith((async () => {
       try {
-        const fresh = await fetch(req);
-        const copy = fresh.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
-        return fresh;
+        return await fetch(req);
       } catch (e) {
+        // offline fallback μόνο για σελίδες που έχουμε precache
         const cached = await caches.match(req);
         if (cached) return cached;
         return (await caches.match("/")) || Response.error();
