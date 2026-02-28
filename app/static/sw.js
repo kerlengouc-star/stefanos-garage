@@ -1,5 +1,4 @@
-// Stefanos Garage OFFLINE PHASE 1 (robust offline page)
-const CACHE_VERSION = "offline-v5";
+const CACHE_VERSION = "offline-v6";
 const CACHE_NAME = `stefanos-garage-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -29,13 +28,13 @@ const OFFLINE_HTML = `<!doctype html>
   <div class="container-fluid">
     <div class="page">
       <h4 class="mb-2">Offline mode</h4>
-      <div class="text-muted mb-3">Δεν υπάρχει σύνδεση στο internet. Μπορείς να δεις σελίδες που έχουν αποθηκευτεί.</div>
+      <div class="text-muted mb-3">Δεν υπάρχει σύνδεση στο internet.</div>
 
       <div class="d-flex gap-2 flex-wrap">
-        <a class="btn btn-outline-secondary btn-sm" href="/">Αρχική</a>
-        <a class="btn btn-outline-secondary btn-sm" href="/history">Ιστορικό</a>
-        <a class="btn btn-outline-secondary btn-sm" href="/checklist">Checklist</a>
-        <a class="btn btn-outline-secondary btn-sm" href="/visits/new">Νέα Επίσκεψη (φόρμα)</a>
+        <button class="btn btn-outline-secondary btn-sm" data-go="/">Αρχική</button>
+        <button class="btn btn-outline-secondary btn-sm" data-go="/history">Ιστορικό</button>
+        <button class="btn btn-outline-secondary btn-sm" data-go="/checklist">Checklist</button>
+        <button class="btn btn-outline-secondary btn-sm" data-go="/visits/new">Νέα Επίσκεψη (φόρμα)</button>
       </div>
 
       <div class="mt-3 small text-muted">
@@ -45,6 +44,15 @@ const OFFLINE_HTML = `<!doctype html>
   </div>
 
   <script src="/static/app.js"></script>
+  <script>
+    // offline navigation helper
+    document.addEventListener("click", function(e){
+      const btn = e.target.closest("[data-go]");
+      if(!btn) return;
+      const path = btn.getAttribute("data-go");
+      if(path) location.href = path;
+    });
+  </script>
 </body>
 </html>`;
 
@@ -64,37 +72,45 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
+async function cachedOrOffline(req) {
+  const url = new URL(req.url);
+  const cached =
+    (await caches.match(req, { ignoreSearch: true })) ||
+    (await caches.match(url.pathname, { ignoreSearch: true })) ||
+    (await caches.match("/", { ignoreSearch: true })) ||
+    (await caches.match("/"));
+
+  if (cached) return cached;
+
+  return new Response(OFFLINE_HTML, {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+    status: 200
+  });
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
-  // Pages (HTML)
+  // Pages
   if (req.mode === "navigate") {
     event.respondWith((async () => {
       try {
         // online -> fresh
-        return await fetch(req);
+        const res = await fetch(req);
+        // cache latest html too (best-effort)
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
       } catch (e) {
-        // offline -> try cached (ignore query), else show OFFLINE HTML
-        const url = new URL(req.url);
-        const cached =
-          (await caches.match(req, { ignoreSearch: true })) ||
-          (await caches.match(url.pathname, { ignoreSearch: true })) ||
-          (await caches.match("/", { ignoreSearch: true })) ||
-          (await caches.match("/"));
-
-        if (cached) return cached;
-
-        return new Response(OFFLINE_HTML, {
-          headers: { "Content-Type": "text/html; charset=utf-8" },
-          status: 200
-        });
+        // offline -> cached or offline html
+        return await cachedOrOffline(req);
       }
     })());
     return;
   }
 
-  // Static assets (cache-first)
+  // Static assets
   event.respondWith((async () => {
     const url = new URL(req.url);
     const cached =
