@@ -1,9 +1,5 @@
-// Stefanos Garage - Offline Phase B (Queue + Sync support)
-// - Provides offline HTML for /visits/new (form saves locally via app.js when offline)
-// - Provides generic offline fallback with navigation links
-// - Caches essential static files
-
-const CACHE_VERSION = "phaseB-v1";
+// Stefanos Garage - STABLE Offline Queue (does NOT break online pages)
+const CACHE_VERSION = "stable-phaseB-v1";
 const SW_CACHE = `sg-sw-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -13,6 +9,7 @@ const PRECACHE = [
   "/static/icon-512.png"
 ];
 
+// Offline "New Visit" page only (safe)
 const OFFLINE_NEW_VISIT_HTML = `<!doctype html>
 <html lang="el">
 <head>
@@ -37,7 +34,7 @@ const OFFLINE_NEW_VISIT_HTML = `<!doctype html>
   <div class="card">
     <h3 style="margin:0 0 6px 0;">Νέα Επίσκεψη (Offline)</h3>
     <div style="color:#dc2626;font-size:13px;margin-bottom:10px;">
-      Είσαι offline. Η καταχώρηση θα αποθηκευτεί τοπικά και θα ανέβει όταν επανέλθει το internet.
+      Είσαι offline. Η καταχώρηση θα αποθηκευτεί στο κινητό/PC και θα ανέβει όταν επανέλθει internet.
     </div>
 
     <div class="note">Ημερομηνία/Ώρα συσκευής: <b id="sg-device-time">—</b></div>
@@ -75,42 +72,15 @@ const OFFLINE_NEW_VISIT_HTML = `<!doctype html>
 
       <div class="btns">
         <button class="btn" type="submit">Αποθήκευση Offline</button>
-        <a class="btn2" href="/">Αρχική</a>
-        <a class="btn2" href="/history">Ιστορικό</a>
-        <a class="btn2" href="/checklist">Checklist</a>
+        <a class="btn2" href="/">Αρχική (online)</a>
       </div>
     </form>
 
-    <div class="note">Όταν επανέλθει internet: θα εμφανιστεί πράσινο banner και “Συγχρονισμός τώρα”.</div>
-  </div>
-
-  <script src="/static/app.js"></script>
-</body>
-</html>`;
-
-const OFFLINE_FALLBACK_HTML = `<!doctype html>
-<html lang="el">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Offline</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding:16px; background:#f5f6f8; }
-    .card { background:#fff;border-radius:14px;padding:16px;box-shadow:0 6px 24px rgba(0,0,0,.08); }
-    a { display:inline-block;margin-right:10px;margin-top:10px;padding:10px 12px;border-radius:10px;background:#e5e7eb;color:#111827;text-decoration:none; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h3 style="margin:0 0 6px 0;">Offline mode</h3>
-    <div style="color:#6b7280;">Δεν υπάρχει σύνδεση. Μπορείς να ανοίξεις βασικές σελίδες και να κάνεις Offline Νέα Επίσκεψη.</div>
-    <div>
-      <a href="/">Αρχική</a>
-      <a href="/history">Ιστορικό</a>
-      <a href="/checklist">Checklist</a>
-      <a href="/visits/new">Νέα Επίσκεψη</a>
+    <div class="note">
+      Tip: όταν έρθει internet θα εμφανιστεί πράσινο banner “Συγχρονισμός τώρα”.
     </div>
   </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>`;
@@ -131,36 +101,40 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
+// ✅ IMPORTANT: Do NOT hijack normal online pages.
+// We only provide offline fallback for /visits/new when fetch fails (offline).
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
 
-  // Pages
   if (req.mode === "navigate") {
     event.respondWith((async () => {
       try {
+        // online → always fetch from server (normal app)
         return await fetch(req);
       } catch (e) {
-        // OFFLINE new visit
+        // offline → only handle New Visit
         if (url.pathname.startsWith("/visits/new")) {
           return new Response(OFFLINE_NEW_VISIT_HTML, {
             status: 200,
             headers: { "Content-Type": "text/html; charset=utf-8" }
           });
         }
-        // generic offline fallback
-        return new Response(OFFLINE_FALLBACK_HTML, {
-          status: 200,
-          headers: { "Content-Type": "text/html; charset=utf-8" }
-        });
+        // everything else: simple offline page (no broken redirects)
+        return new Response(
+          "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>" +
+          "<div style='font-family:system-ui;padding:16px'>Offline. Άνοιξε <a href=\"/visits/new\">Νέα Επίσκεψη</a> για offline καταχώρηση.</div>" +
+          "<script src='/static/app.js'></script>",
+          { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } }
+        );
       }
     })());
     return;
   }
 
-  // Static cache-first
+  // static: cache-first
   event.respondWith((async () => {
     const cache = await caches.open(SW_CACHE);
     const cached = await cache.match(req, { ignoreSearch: true });
