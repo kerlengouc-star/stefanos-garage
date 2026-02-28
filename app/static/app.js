@@ -1,5 +1,3 @@
-// OFFLINE INDICATOR + SW REGISTER (PHASE 1)
-
 function showOfflineBanner() {
   if (document.getElementById("offline-banner")) return;
 
@@ -12,7 +10,6 @@ function showOfflineBanner() {
   el.textContent = "⚠ Δεν υπάρχει σύνδεση στο internet (Offline mode)";
   document.body.appendChild(el);
 
-  // push page down so it doesn't cover navbar
   document.body.style.paddingTop = "34px";
 }
 
@@ -22,19 +19,29 @@ function removeOfflineBanner() {
   document.body.style.paddingTop = "";
 }
 
-window.addEventListener("online", removeOfflineBanner);
-window.addEventListener("offline", showOfflineBanner);
-
-if (!navigator.onLine) showOfflineBanner();
-
-// ✅ Register SW (root scope is controlled by main.py: /sw.js)
-async function registerSW() {
-  if (!("serviceWorker" in navigator)) return;
-  try {
-    await navigator.serviceWorker.register("/sw.js");
-  } catch (e) {
-    // ignore
-  }
+function refreshOfflineUI() {
+  if (navigator.onLine) removeOfflineBanner();
+  else showOfflineBanner();
 }
 
-registerSW();
+window.addEventListener("online", refreshOfflineUI);
+window.addEventListener("offline", refreshOfflineUI);
+
+// ✅ όταν ανοίγει η σελίδα
+window.addEventListener("load", () => {
+  refreshOfflineUI();
+  setTimeout(refreshOfflineUI, 400); // extra safety
+});
+
+// ✅ όταν γυρνάς στο app από background
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    refreshOfflineUI();
+    setTimeout(refreshOfflineUI, 200);
+  }
+});
+
+// Service Worker register (όπως ήδη δουλεύει στο project σου)
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
