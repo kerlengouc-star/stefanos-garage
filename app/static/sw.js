@@ -1,7 +1,7 @@
-// Stefanos Garage OFFLINE PHASE 1 (fix /visits/new offline)
-const CACHE_VERSION = "offline-v8";
+// Stefanos Garage OFFLINE PHASE 1 (stable offline pages + offline new visit)
+const CACHE_VERSION = "offline-v9";
 const SW_CACHE = `sg-sw-${CACHE_VERSION}`;
-const PAGES_CACHE = "sg-pages-v1";
+const PAGES_CACHE = "sg-pages-v2";
 
 const PRECACHE = [
   "/static/app.js",
@@ -82,7 +82,7 @@ const OFFLINE_NEW_VISIT_HTML = `<!doctype html>
 
   <script src="/static/app.js"></script>
   <script>
-    const KEY = "offline_new_visit_draft_v1";
+    const KEY = "offline_new_visit_draft_v2";
     const ids = ["customer_name","phone","email","plate_number","model","vin","notes"];
 
     function loadDraft(){
@@ -104,7 +104,6 @@ const OFFLINE_NEW_VISIT_HTML = `<!doctype html>
 
     document.getElementById("save_draft").onclick = saveDraft;
     document.getElementById("clear_draft").onclick = clearDraft;
-
     loadDraft();
   </script>
 </body>
@@ -125,7 +124,7 @@ const OFFLINE_FALLBACK_HTML = `<!doctype html>
 <body>
   <div class="card">
     <h3 style="margin:0 0 6px 0;">Offline mode</h3>
-    <div style="color:#6b7280;">Δεν υπάρχει σύνδεση. Μπορείς να δεις σελίδες που έχουν αποθηκευτεί.</div>
+    <div style="color:#6b7280;">Δεν υπάρχει σύνδεση. Άνοιξε τις σελίδες online έστω 1 φορά για να ανοίγουν και offline.</div>
     <div>
       <a href="/">Αρχική</a>
       <a href="/history">Ιστορικό</a>
@@ -168,28 +167,32 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
 
+  // Pages
   if (req.mode === "navigate") {
     event.respondWith((async () => {
       try {
         return await fetch(req);
       } catch (e) {
-        // ειδική offline σελίδα για /visits/new
         if (url.pathname === "/visits/new") {
-          return new Response(OFFLINE_NEW_VISIT_HTML, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+          return new Response(OFFLINE_NEW_VISIT_HTML, {
+            status: 200,
+            headers: { "Content-Type": "text/html; charset=utf-8" }
+          });
         }
 
-        // αλλιώς προσπάθησε cached snapshot
         const cached = await matchFromPagesCache(url.pathname);
         if (cached) return cached;
 
-        // fallback generic
-        return new Response(OFFLINE_FALLBACK_HTML, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+        return new Response(OFFLINE_FALLBACK_HTML, {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" }
+        });
       }
     })());
     return;
   }
 
-  // static assets: cache-first
+  // Static assets
   event.respondWith((async () => {
     const cache = await caches.open(SW_CACHE);
     const cached = await cache.match(req, { ignoreSearch: true });
