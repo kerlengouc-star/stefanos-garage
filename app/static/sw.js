@@ -1,9 +1,9 @@
-// Stefanos Garage OFFLINE PHASE 1 (FIX for PWA open while already offline)
-const CACHE_VERSION = "offline-v4";
+// Stefanos Garage OFFLINE PHASE 1 (robust offline page)
+const CACHE_VERSION = "offline-v5";
 const CACHE_NAME = `stefanos-garage-${CACHE_VERSION}`;
 
 const PRECACHE = [
-  "/",              // app shell
+  "/",
   "/history",
   "/checklist",
   "/visits/new",
@@ -13,14 +13,47 @@ const PRECACHE = [
   "/static/icon-512.png"
 ];
 
+const OFFLINE_HTML = `<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offline</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { padding: 18px; background:#f5f6f8; }
+    .page { background:#fff; border-radius:16px; padding:18px; box-shadow:0 6px 24px rgba(0,0,0,.08); }
+  </style>
+</head>
+<body>
+  <div class="container-fluid">
+    <div class="page">
+      <h4 class="mb-2">Offline mode</h4>
+      <div class="text-muted mb-3">Δεν υπάρχει σύνδεση στο internet. Μπορείς να δεις σελίδες που έχουν αποθηκευτεί.</div>
+
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-secondary btn-sm" href="/">Αρχική</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/history">Ιστορικό</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/checklist">Checklist</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/visits/new">Νέα Επίσκεψη (φόρμα)</a>
+      </div>
+
+      <div class="mt-3 small text-muted">
+        Σημείωση: Offline καταχώρηση στη βάση θα γίνει στη Φάση 2 (sync).
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>`;
+
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.addAll(PRECACHE);
-      self.skipWaiting();
-    })().catch(() => {})
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(PRECACHE);
+    self.skipWaiting();
+  })().catch(() => {}));
 });
 
 self.addEventListener("activate", (event) => {
@@ -31,38 +64,43 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-// HTML: network-first, but OFFLINE always falls back to cached "/" (ignore query params)
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
-  const url = new URL(req.url);
-
-  // Navigations (pages)
+  // Pages (HTML)
   if (req.mode === "navigate") {
     event.respondWith((async () => {
       try {
-        // online -> always prefer fresh
+        // online -> fresh
         return await fetch(req);
       } catch (e) {
-        // offline -> try exact page ignoring search, else fallback to "/"
-        const cachedPage =
+        // offline -> try cached (ignore query), else show OFFLINE HTML
+        const url = new URL(req.url);
+        const cached =
           (await caches.match(req, { ignoreSearch: true })) ||
           (await caches.match(url.pathname, { ignoreSearch: true })) ||
           (await caches.match("/", { ignoreSearch: true })) ||
           (await caches.match("/"));
 
-        return cachedPage || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } });
+        if (cached) return cached;
+
+        return new Response(OFFLINE_HTML, {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+          status: 200
+        });
       }
     })());
     return;
   }
 
-  // Static files: cache-first
+  // Static assets (cache-first)
   event.respondWith((async () => {
+    const url = new URL(req.url);
     const cached =
       (await caches.match(req, { ignoreSearch: true })) ||
       (await caches.match(url.pathname, { ignoreSearch: true }));
+
     if (cached) return cached;
 
     try {
@@ -71,7 +109,7 @@ self.addEventListener("fetch", (event) => {
       caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
       return fresh;
     } catch (e) {
-      return cached || new Response("", { status: 504 });
+      return new Response("", { status: 504 });
     }
   })());
 });
