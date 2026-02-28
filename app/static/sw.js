@@ -1,5 +1,5 @@
-// Stefanos Garage OFFLINE PHASE 1 (stable offline pages + offline new visit)
-const CACHE_VERSION = "offline-v9";
+// Stefanos Garage OFFLINE PHASE 1 (fix /visits/new offline for all variants)
+const CACHE_VERSION = "offline-v10";
 const SW_CACHE = `sg-sw-${CACHE_VERSION}`;
 const PAGES_CACHE = "sg-pages-v2";
 
@@ -75,9 +75,7 @@ const OFFLINE_NEW_VISIT_HTML = `<!doctype html>
       <a class="btn2" href="/checklist">Checklist</a>
     </div>
 
-    <div class="note">
-      Στη Φάση 2 θα γίνει Sync: θα αποθηκεύει offline και θα ανεβάζει όταν έχει internet.
-    </div>
+    <div class="note">Στη Φάση 2 θα γίνει Sync (offline καταχώρηση + αυτόματο ανέβασμα).</div>
   </div>
 
   <script src="/static/app.js"></script>
@@ -124,7 +122,7 @@ const OFFLINE_FALLBACK_HTML = `<!doctype html>
 <body>
   <div class="card">
     <h3 style="margin:0 0 6px 0;">Offline mode</h3>
-    <div style="color:#6b7280;">Δεν υπάρχει σύνδεση. Άνοιξε τις σελίδες online έστω 1 φορά για να ανοίγουν και offline.</div>
+    <div style="color:#6b7280;">Δεν υπάρχει σύνδεση.</div>
     <div>
       <a href="/">Αρχική</a>
       <a href="/history">Ιστορικό</a>
@@ -173,7 +171,8 @@ self.addEventListener("fetch", (event) => {
       try {
         return await fetch(req);
       } catch (e) {
-        if (url.pathname === "/visits/new") {
+        // ✅ ΠΙΑΝΕΙ /visits/new, /visits/new/, /visits/new?...
+        if (url.pathname.startsWith("/visits/new")) {
           return new Response(OFFLINE_NEW_VISIT_HTML, {
             status: 200,
             headers: { "Content-Type": "text/html; charset=utf-8" }
