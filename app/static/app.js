@@ -9,7 +9,6 @@ function showOfflineBanner() {
 
   el.textContent = "⚠ Δεν υπάρχει σύνδεση στο internet (Offline mode)";
   document.body.appendChild(el);
-
   document.body.style.paddingTop = "34px";
 }
 
@@ -27,13 +26,11 @@ function refreshOfflineUI() {
 window.addEventListener("online", refreshOfflineUI);
 window.addEventListener("offline", refreshOfflineUI);
 
-// ✅ όταν ανοίγει η σελίδα
 window.addEventListener("load", () => {
   refreshOfflineUI();
-  setTimeout(refreshOfflineUI, 400); // extra safety
+  setTimeout(refreshOfflineUI, 300);
 });
 
-// ✅ όταν γυρνάς στο app από background
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     refreshOfflineUI();
@@ -41,7 +38,12 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// Service Worker register (όπως ήδη δουλεύει στο project σου)
+// ✅ όταν πατάς link/κουμπί, κάνε ξανά check
+document.addEventListener("click", () => {
+  setTimeout(refreshOfflineUI, 50);
+});
+
+// SW register
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
